@@ -1,8 +1,8 @@
 ## Interface: 110005
-## Title: Keylord
+## Title: KeyMaster
 ## Notes: Auto-replies with your Mythic+ key and auto-slots matching keys at the Font of Power.
-## Author: Joe
+## Author: Karnytine-Stormrage (joe@tyreenet.com)
 ## Version: 1.0.0
-## SavedVariables: KeylordDB
+## SavedVariables: KeyMasterDB
 
-Keylord.lua
+KeyMaster.lua

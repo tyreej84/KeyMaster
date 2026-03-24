@@ -1,6 +1,10 @@
 local addonName = ...
 
 local frame = CreateFrame("Frame")
+local REPLY_PREFIX = "[KeyMaster]"
+local REPLY_COOLDOWN_SECONDS = 15
+local lastReplyAt = 0
+local KEYSTONE_ITEM_ID = 180653
 
 local CHAT_EVENTS = {
     CHAT_MSG_PARTY = true,
@@ -9,6 +13,7 @@ local CHAT_EVENTS = {
     CHAT_MSG_INSTANCE_CHAT_LEADER = true,
     CHAT_MSG_RAID = true,
     CHAT_MSG_RAID_LEADER = true,
+    CHAT_MSG_GUILD = true,
 }
 
 local CHAT_EVENT_TO_CHANNEL = {
@@ -18,6 +23,7 @@ local CHAT_EVENT_TO_CHANNEL = {
     CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
     CHAT_MSG_RAID = "RAID",
     CHAT_MSG_RAID_LEADER = "RAID",
+    CHAT_MSG_GUILD = "GUILD",
 }
 
 local function NormalizeName(fullName)
@@ -72,31 +78,43 @@ end
 
 local function GetOwnedKeystoneLink()
     if C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLink then
-        return C_MythicPlus.GetOwnedKeystoneLink()
+        local link = C_MythicPlus.GetOwnedKeystoneLink()
+        if link then
+            return link
+        end
+    end
+
+    if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo then
+        for bag = BACKPACK_CONTAINER, NUM_BAG_SLOTS do
+            local slots = C_Container.GetContainerNumSlots(bag)
+            for slot = 1, slots do
+                local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
+                if itemInfo and itemInfo.itemID == KEYSTONE_ITEM_ID then
+                    return itemInfo.hyperlink or C_Container.GetContainerItemLink(bag, slot)
+                end
+            end
+        end
     end
 
     return nil
 end
 
 local function BuildKeystoneReply()
-    local level = GetOwnedKeystoneLevel()
-    local mapID = GetOwnedKeystoneMapID()
-
-    if not level or level <= 0 or not mapID then
-        return nil
-    end
-
     local keyLink = GetOwnedKeystoneLink()
     if keyLink then
-        return "I have " .. keyLink
+        return string.format("%s %s", REPLY_PREFIX, keyLink)
     end
 
-    local mapName = GetKeystoneMapName(mapID)
-    if mapName then
-        return string.format("I have a +%d %s key.", level, mapName)
-    end
+    return nil
+end
 
-    return string.format("I have a +%d key.", level)
+local function IsOnReplyCooldown()
+    local now = GetTime()
+    return (now - lastReplyAt) < REPLY_COOLDOWN_SECONDS
+end
+
+local function MarkReplySent()
+    lastReplyAt = GetTime()
 end
 
 local function IsKeyRequestMessage(message)
@@ -121,6 +139,10 @@ local function HandleChatMessage(event, message, sender)
         return
     end
 
+    if IsOnReplyCooldown() then
+        return
+    end
+
     local reply = BuildKeystoneReply()
     if not reply then
         return
@@ -132,6 +154,7 @@ local function HandleChatMessage(event, message, sender)
     end
 
     SendChatMessage(reply, chatType)
+    MarkReplySent()
 end
 
 local function GetCurrentReceptacleMapID(...)
@@ -189,12 +212,13 @@ frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT")
 frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT_LEADER")
 frame:RegisterEvent("CHAT_MSG_RAID")
 frame:RegisterEvent("CHAT_MSG_RAID_LEADER")
+frame:RegisterEvent("CHAT_MSG_GUILD")
 frame:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
-        if not KeylordDB then
-            KeylordDB = {}
+        if not KeyMasterDB then
+            KeyMasterDB = {}
         end
         return
     end
