@@ -30,11 +30,6 @@ local function NormalizeName(fullName)
     return Ambiguate(fullName or "", "short")
 end
 
-local function IsOwnMessage(sender)
-    local me = UnitName("player")
-    return NormalizeName(sender) == NormalizeName(me)
-end
-
 local function GetOwnedKeystoneLevel()
     if C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel then
         return C_MythicPlus.GetOwnedKeystoneLevel()
@@ -128,10 +123,6 @@ end
 
 local function HandleChatMessage(event, message, sender)
     if not CHAT_EVENTS[event] then
-        return
-    end
-
-    if IsOwnMessage(sender) then
         return
     end
 

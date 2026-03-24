@@ -4,7 +4,7 @@ A lightweight WoW addon for Mythic+ groups.
 
 ## What it does
 
-- If someone types `!key` or `!keys` in party, raid, instance, or guild chat, it replies with your clickable keystone link.
+- If someone, including you, types `!key` or `!keys` in party, raid, instance, or guild chat, it replies with your clickable keystone link.
 - If you do not have a key, it does nothing.
 - If a clickable keystone link cannot be resolved, it does nothing (no plain-text fallback).
 - When opening a Font of Power, it auto-slots your key only if your key matches that dungeon.
