@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [1.0.4] - 2026-03-25
+
+### Added
+- Added `!best` command to report your best key for the current week and season.
+- Added `!weekly` command alias for `!vault`.
+
+### Changed
+- Expanded strict exact-match command set to: `!key`, `!keys`, `!score`, `!vault`, `!weekly`, and `!best`.
+
+## [1.0.3] - 2026-03-25
+
+### Added
+- Added `!score` command to report your current Mythic+ score.
+- Added `!vault` command to report Mythic+ weekly vault progress.
+
+### Changed
+- Expanded strict exact-match command set to: `!key`, `!keys`, `!score`, and `!vault`.
+
 ## [1.0.2] - 2026-03-25
 
 ### Changed
