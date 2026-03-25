@@ -2,15 +2,12 @@ local addonName = ...
 
 local frame = CreateFrame("Frame")
 local REPLY_PREFIX = "[KeyMaster]"
-local REPLY_COOLDOWN_SECONDS = 15
-local lastReplyAt = 0
 local KEYSTONE_ITEM_ID = 180653
+local KEYS_TEXT_COMMAND = "!keys"
 
 local CHAT_EVENTS = {
     CHAT_MSG_PARTY = true,
     CHAT_MSG_PARTY_LEADER = true,
-    CHAT_MSG_INSTANCE_CHAT = true,
-    CHAT_MSG_INSTANCE_CHAT_LEADER = true,
     CHAT_MSG_RAID = true,
     CHAT_MSG_RAID_LEADER = true,
     CHAT_MSG_GUILD = true,
@@ -19,8 +16,6 @@ local CHAT_EVENTS = {
 local CHAT_EVENT_TO_CHANNEL = {
     CHAT_MSG_PARTY = "PARTY",
     CHAT_MSG_PARTY_LEADER = "PARTY",
-    CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT",
-    CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
     CHAT_MSG_RAID = "RAID",
     CHAT_MSG_RAID_LEADER = "RAID",
     CHAT_MSG_GUILD = "GUILD",
@@ -103,22 +98,13 @@ local function BuildKeystoneReply()
     return nil
 end
 
-local function IsOnReplyCooldown()
-    local now = GetTime()
-    return (now - lastReplyAt) < REPLY_COOLDOWN_SECONDS
-end
-
-local function MarkReplySent()
-    lastReplyAt = GetTime()
-end
-
 local function IsKeyRequestMessage(message)
     if not message then
         return false
     end
 
     local msg = strtrim(string.lower(message))
-    return msg == "!key" or msg == "!keys"
+    return msg == "!key" or msg == KEYS_TEXT_COMMAND
 end
 
 local function HandleChatMessage(event, message, sender)
@@ -127,10 +113,6 @@ local function HandleChatMessage(event, message, sender)
     end
 
     if not IsKeyRequestMessage(message) then
-        return
-    end
-
-    if IsOnReplyCooldown() then
         return
     end
 
@@ -145,7 +127,6 @@ local function HandleChatMessage(event, message, sender)
     end
 
     SendChatMessage(reply, chatType)
-    MarkReplySent()
 end
 
 local function GetCurrentReceptacleMapID(...)
@@ -180,16 +161,9 @@ local function TryAutoSlotKeystone(...)
     end
 
     local ownedMapID = GetOwnedKeystoneMapID()
-    if not ownedMapID then
-        return
-    end
 
     local receptacleMapID = GetCurrentReceptacleMapID(...)
-    if not receptacleMapID then
-        return
-    end
-
-    if ownedMapID ~= receptacleMapID then
+    if ownedMapID and receptacleMapID and ownedMapID ~= receptacleMapID then
         return
     end
 
@@ -199,12 +173,11 @@ end
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_PARTY")
 frame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
-frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT")
-frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT_LEADER")
 frame:RegisterEvent("CHAT_MSG_RAID")
 frame:RegisterEvent("CHAT_MSG_RAID_LEADER")
 frame:RegisterEvent("CHAT_MSG_GUILD")
 frame:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN")
+frame:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTACLE_OPEN")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -214,7 +187,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
-    if event == "CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN" then
+    if event == "CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN" or event == "CHALLENGE_MODE_KEYSTONE_RECEPTACLE_OPEN" then
         TryAutoSlotKeystone(...)
         return
     end
