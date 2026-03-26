@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-03-26
+
+### Added
+- Added a live Mythic+ overlay UI to KeyMaster with a transparent black panel and white text.
+- Added active dungeon header, affix summary, elapsed timer, and +2/+3 chest breakpoint lines.
+- Added scenario objective tracking, death counter display, and an Enemy Forces progress bar.
+- Added `/km` UI controls for lock, unlock, hide, show, reset, and scale.
+- Added a KeyMaster settings option to disable the custom Mythic+ UI and fall back to Blizzard's default Mythic+ interface.
+
+### Changed
+- Styled the Enemy Forces bar with a BreakTimerLite-inspired blue progress fill and centered white percentage text.
+
+### Packaging
+- Built release archive at `Releases/1.2.0/KeyMaster.zip`.
+
 ## [1.1.9] - 2026-03-26
 
 ### Changed
