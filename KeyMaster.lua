@@ -1,5 +1,10 @@
 local addonName = ...
 
+local floor = math.floor
+local min = math.min
+local tconcat = table.concat
+local strlower = string.lower
+
 local frame = CreateFrame("Frame")
 local REPLY_PREFIX = "KeyMaster:"
 local KEYSTONE_ITEM_ID = 180653
@@ -11,6 +16,44 @@ local WEEKLY_TEXT_COMMAND = "!weekly"
 local BEST_TEXT_COMMAND = "!best"
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local lastMismatchToastAt = 0
+
+local function IsDebugEnabled()
+    return KeyMasterDB and KeyMasterDB.debug == true
+end
+
+local function DebugPrint(...)
+    if not IsDebugEnabled() then
+        return
+    end
+
+    local parts = { ... }
+    local message = tconcat(parts, " ")
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99KeyMaster Debug:|r " .. message)
+    else
+        print("KeyMaster Debug: " .. message)
+    end
+end
+
+SLASH_KEYMASTER1 = "/keymaster"
+SLASH_KEYMASTER2 = "/km"
+SlashCmdList.KEYMASTER = function(message)
+    local msg = strtrim(strlower(message or ""))
+
+    if msg == "debug" then
+        KeyMasterDB = KeyMasterDB or {}
+        KeyMasterDB.debug = not KeyMasterDB.debug
+        print(string.format("KeyMaster: debug %s", KeyMasterDB.debug and "enabled" or "disabled"))
+        return
+    end
+
+    if msg ~= "" then
+        print("KeyMaster: slash command is active.")
+        return
+    end
+
+    print("KeyMaster: loaded")
+end
 
 local CHAT_EVENTS = {
     CHAT_MSG_PARTY = true,
@@ -119,19 +162,27 @@ local function GetOwnedKeystoneLink()
         end
     end
 
-    if C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo then
-        for bag = BACKPACK_CONTAINER, NUM_BAG_SLOTS do
-            local slots = C_Container.GetContainerNumSlots(bag)
-            for slot = 1, slots do
-                local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
-                if itemInfo and itemInfo.itemID == KEYSTONE_ITEM_ID then
-                    return itemInfo.hyperlink or C_Container.GetContainerItemLink(bag, slot)
-                end
-            end
-        end
+    local mapID = GetOwnedKeystoneMapID()
+    local keyLevel = GetOwnedKeystoneLevel()
+    local mapName = GetKeystoneMapName(mapID)
+    if not mapID or not keyLevel or not mapName or mapName == "" then
+        return nil
     end
 
-    return nil
+    local linkText = string.format("[Keystone: %s (%d)]", mapName, keyLevel)
+
+    return string.format(
+        "|cffa335ee|Hkeystone:%d:%d:%d:%d:%d:%d:%d:%d|h%s|h|r",
+        KEYSTONE_ITEM_ID,
+        mapID,
+        keyLevel,
+        0,
+        0,
+        0,
+        0,
+        0,
+        linkText
+    )
 end
 
 local function BuildKeystoneReply()
@@ -315,7 +366,7 @@ local function IsKeyRequestMessage(message)
         return false
     end
 
-    local msg = strtrim(string.lower(message))
+    local msg = strtrim(strlower(message))
     return msg == KEY_TEXT_COMMAND
         or msg == KEYS_TEXT_COMMAND
         or msg == SCORE_TEXT_COMMAND
@@ -325,7 +376,7 @@ local function IsKeyRequestMessage(message)
 end
 
 local function BuildReplyForCommand(message)
-    local msg = strtrim(string.lower(message or ""))
+    local msg = strtrim(strlower(message or ""))
 
     if msg == KEY_TEXT_COMMAND or msg == KEYS_TEXT_COMMAND then
         return BuildKeystoneReply()
@@ -351,21 +402,31 @@ local function HandleChatMessage(event, message, sender)
         return
     end
 
+    DebugPrint("Event:", tostring(event), "Message:", tostring(message), "Sender:", tostring(sender))
+
     if not IsKeyRequestMessage(message) then
         return
     end
 
     local reply = BuildReplyForCommand(message)
     if not reply then
+        DebugPrint("No reply generated for command:", tostring(message))
         return
     end
 
     local chatType = CHAT_EVENT_TO_CHANNEL[event]
     if not chatType then
+        DebugPrint("No chat type mapping for event:", tostring(event))
         return
     end
 
-    SendChatMessage(reply, chatType)
+    if chatType == "WHISPER" then
+        SendChatMessage(reply, chatType, nil, sender)
+    else
+        SendChatMessage(reply, chatType)
+    end
+
+    DebugPrint("Sent reply:", tostring(reply), "Channel:", tostring(chatType))
 end
 
 local function GetCurrentReceptacleMapID(...)
@@ -424,6 +485,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if not KeyMasterDB then
             KeyMasterDB = {}
         end
+        DebugPrint("Player logged in, initialized KeyMasterDB")
         return
     end
 
@@ -432,5 +494,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
+    DebugPrint("Chat event received:", tostring(event))
     HandleChatMessage(event, ...)
 end)

@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [1.1.0] - 2026-03-25
+
+### Fixed
+- Simplified chat event listening to focus on party/raid/guild channels (removed instance chat, whisper, and say).
+- Added explicit debug logging at event entry point to diagnose chat-event dispatch issues.
+
+### Testing
+- Use `/km debug` to enable debugging and monitor which events are being received.
+
+### Packaging
+- Built release archive at `Releases/1.1.0/KeyMaster.zip`.
+
+## [1.0.10] - 2026-03-25
+
+### Fixed
+- Simplified keystone link generation to eliminate the syntax error that was preventing the addon from loading.
+
+### Packaging
+- Built release archive at `Releases/1.0.10/KeyMaster.zip`.
+
+## [1.0.9] - 2026-03-25
+
+### Fixed
+- Moved slash command registration to the earliest safe load point so addon startup can be verified even if later functionality fails.
+
+### Packaging
+- Built release archive at `Releases/1.0.9/KeyMaster.zip`.
+
+## [1.0.8] - 2026-03-25
+
+### Fixed
+- Fixed current Retail Lua compatibility by explicitly binding helper functions used by command and debug paths.
+
+### Packaging
+- Built release archive at `Releases/1.0.8/KeyMaster.zip`.
+
+## [1.0.7] - 2026-03-25
+
+### Changed
+- Expanded chat event coverage to include instance chat, whisper, and say for compatibility testing.
+- Added `/keymaster` and `/km` slash commands with optional debug logging to diagnose command handling in game.
+
+### Packaging
+- Built release archive at `Releases/1.0.7/KeyMaster.zip`.
+
+## [1.0.6] - 2026-03-25
+
+### Changed
+- Updated addon interface compatibility to WoW Retail `12.0.1` (`## Interface: 120001`).
+- Reworked keystone link generation for current Retail APIs: resolve owned keystone map/level from `C_MythicPlus` and build the chat link directly.
+
+### Packaging
+- Built release archive at `Releases/1.0.6/KeyMaster.zip`.
+
 ## [1.0.4] - 2026-03-25
 
 ### Added
