@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
-## [1.1.4] - 2026-03-26
+## [1.1.6] - 2026-03-26
 
 ### Fixed
 - Replaced unreliable `CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN` event with `ChallengesKeystoneFrame:HookScript("OnShow")` pattern used by MythicPlusTimer and AstralKeys — more reliable and not subject to event rename breakage.
@@ -14,7 +14,7 @@ The format is based on Keep a Changelog.
 - Removed `GetCurrentReceptacleMapID` helper — map check now uses `C_ChallengeMode.GetActiveChallengeMapID()` directly.
 
 ### Packaging
-- Built release archive at `Releases/1.1.4/KeyMaster.zip`.
+- Built release archive at `Releases/1.1.6/KeyMaster.zip`.
 
 ## [1.1.3] - 2026-03-26
 
