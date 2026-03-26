@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [1.1.8] - 2026-03-26
+
+### Fixed
+- Fixed `!best` crash: replaced `|` separator in reply string with `/` — WoW treats `|` as a chat escape prefix and rejects messages containing unescaped pipe characters.
+- Fixed `!best` reporting impossible key levels (e.g. +2458): `GetWeeklyBestForMap`/`GetSeasonBestForMap` return scores/ratings on current Retail, not key levels. Added sanity bounds check (2–40) and switched run history (`GetRunHistory`) to be the primary data source, with API map-lookup as fallback only.
+
+### Packaging
+- Built release archive at `Releases/1.1.8/KeyMaster.zip`.
+
 ## [1.1.7] - 2026-03-26
 
 ### Removed

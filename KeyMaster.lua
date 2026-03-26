@@ -283,16 +283,19 @@ local function BuildScoreReply()
 end
 
 local function ResolveBestLevel(result1, result2)
+    local level
+
     if type(result1) == "number" then
-        return result1
+        level = result1
+    elseif type(result1) == "table" then
+        level = result1.level or result1.bestRunLevel or result1.completedLevel or result1.keystoneLevel
+    elseif type(result2) == "number" then
+        level = result2
     end
 
-    if type(result1) == "table" then
-        return result1.level or result1.bestRunLevel or result1.completedLevel or result1.keystoneLevel
-    end
-
-    if type(result2) == "number" then
-        return result2
+    -- Sanity check: key levels are 2-40; anything outside that range is not a key level
+    if type(level) == "number" and level >= 2 and level <= 40 then
+        return level
     end
 
     return nil
@@ -368,13 +371,14 @@ local function FormatBestRun(bestRun)
 end
 
 local function BuildBestReply()
-    local weekBest = GetBestRunFromMapLookup("GetWeeklyBestForMap")
-    local seasonBest = GetBestRunFromMapLookup("GetSeasonBestForMap")
+    -- Use run history as primary source (proven reliable); API map-lookup as fallback
+    local weekBest, seasonBest = GetBestRunsFromHistory()
 
     if not weekBest or not seasonBest then
-        local historyWeekBest, historySeasonBest = GetBestRunsFromHistory()
-        weekBest = weekBest or historyWeekBest
-        seasonBest = seasonBest or historySeasonBest
+        local mapWeekBest = GetBestRunFromMapLookup("GetWeeklyBestForMap")
+        local mapSeasonBest = GetBestRunFromMapLookup("GetSeasonBestForMap")
+        weekBest = weekBest or mapWeekBest
+        seasonBest = seasonBest or mapSeasonBest
     end
 
     if not weekBest and not seasonBest then
@@ -382,7 +386,7 @@ local function BuildBestReply()
     end
 
     return string.format(
-        "%s Best - Week: %s | Season: %s",
+        "%s Best - Week: %s / Season: %s",
         REPLY_PREFIX,
         FormatBestRun(weekBest),
         FormatBestRun(seasonBest)
