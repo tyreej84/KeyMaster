@@ -4,10 +4,12 @@ local floor = math.floor
 local min = math.min
 local tconcat = table.concat
 local strlower = string.lower
+local strtrim = strtrim
 
 local frame = CreateFrame("Frame")
 local REPLY_PREFIX = "KeyMaster:"
 local KEYSTONE_ITEM_ID = 180653
+local KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
 local KEYS_TEXT_COMMAND = "!keys"
 local KEY_TEXT_COMMAND = "!key"
 local SCORE_TEXT_COMMAND = "!score"
@@ -16,9 +18,25 @@ local WEEKLY_TEXT_COMMAND = "!weekly"
 local BEST_TEXT_COMMAND = "!best"
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local lastMismatchToastAt = 0
+local DEBUG_HISTORY_LIMIT = 25
 
 local function IsDebugEnabled()
     return KeyMasterDB and KeyMasterDB.debug == true
+end
+
+local function AppendDebugHistory(message)
+    if not KeyMasterDB then
+        KeyMasterDB = {}
+    end
+
+    if type(KeyMasterDB.debugLog) ~= "table" then
+        KeyMasterDB.debugLog = {}
+    end
+
+    table.insert(KeyMasterDB.debugLog, message)
+    while #KeyMasterDB.debugLog > DEBUG_HISTORY_LIMIT do
+        table.remove(KeyMasterDB.debugLog, 1)
+    end
 end
 
 local function DebugPrint(...)
@@ -28,11 +46,25 @@ local function DebugPrint(...)
 
     local parts = { ... }
     local message = tconcat(parts, " ")
+    AppendDebugHistory(message)
+
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage("KeyMaster Debug: " .. message, 0.2, 1.0, 0.4, 1.0)
+    end
+
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99KeyMaster Debug:|r " .. message)
     else
         print("KeyMaster Debug: " .. message)
     end
+end
+
+local function SafeDebugValue(value)
+    if value == nil then
+        return "<nil>"
+    end
+
+    return tostring(value)
 end
 
 SLASH_KEYMASTER1 = "/keymaster"
@@ -47,6 +79,16 @@ SlashCmdList.KEYMASTER = function(message)
         return
     end
 
+    if msg == "debuglog" then
+        KeyMasterDB = KeyMasterDB or {}
+        local debugLog = KeyMasterDB.debugLog or {}
+        print(string.format("KeyMaster: debug log entries: %d", #debugLog))
+        for index, entry in ipairs(debugLog) do
+            print(string.format("KeyMaster Debug[%d]: %s", index, tostring(entry)))
+        end
+        return
+    end
+
     if msg ~= "" then
         print("KeyMaster: slash command is active.")
         return
@@ -57,23 +99,15 @@ end
 
 local CHAT_EVENTS = {
     CHAT_MSG_PARTY = true,
-    CHAT_MSG_PARTY_LEADER = true,
     CHAT_MSG_RAID = true,
-    CHAT_MSG_RAID_LEADER = true,
     CHAT_MSG_GUILD = true,
 }
 
 local CHAT_EVENT_TO_CHANNEL = {
     CHAT_MSG_PARTY = "PARTY",
-    CHAT_MSG_PARTY_LEADER = "PARTY",
     CHAT_MSG_RAID = "RAID",
-    CHAT_MSG_RAID_LEADER = "RAID",
     CHAT_MSG_GUILD = "GUILD",
 }
-
-local function NormalizeName(fullName)
-    return Ambiguate(fullName or "", "short")
-end
 
 local function GetOwnedKeystoneLevel()
     if C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel then
@@ -98,6 +132,23 @@ local function GetOwnedKeystoneMapID()
 
     if C_ChallengeMode and C_ChallengeMode.GetOwnedKeystoneChallengeMapID then
         return C_ChallengeMode.GetOwnedKeystoneChallengeMapID()
+    end
+
+    return nil
+end
+
+local function FindKeystoneItemLocation()
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID) then
+        return nil
+    end
+
+    for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
+        local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+        for slotIndex = 1, slotCount do
+            if C_Container.GetContainerItemID(bagID, slotIndex) == KEYSTONE_ITEM_ID then
+                return ItemLocation:CreateFromBagAndSlot(bagID, slotIndex)
+            end
+        end
     end
 
     return nil
@@ -162,6 +213,14 @@ local function GetOwnedKeystoneLink()
         end
     end
 
+    local itemLocation = FindKeystoneItemLocation()
+    if itemLocation and C_Item and C_Item.GetItemLink then
+        local link = C_Item.GetItemLink(itemLocation)
+        if link then
+            return link
+        end
+    end
+
     local mapID = GetOwnedKeystoneMapID()
     local keyLevel = GetOwnedKeystoneLevel()
     local mapName = GetKeystoneMapName(mapID)
@@ -188,9 +247,11 @@ end
 local function BuildKeystoneReply()
     local keyLink = GetOwnedKeystoneLink()
     if keyLink then
+        DebugPrint("Resolved keystone link:", SafeDebugValue(keyLink))
         return string.format("%s %s", REPLY_PREFIX, keyLink)
     end
 
+    DebugPrint("Failed to resolve keystone link")
     return nil
 end
 
@@ -414,16 +475,26 @@ local function HandleChatMessage(event, message, sender)
         return
     end
 
+    DebugPrint("Built reply:", SafeDebugValue(reply))
+
     local chatType = CHAT_EVENT_TO_CHANNEL[event]
     if not chatType then
         DebugPrint("No chat type mapping for event:", tostring(event))
         return
     end
 
+    DebugPrint("Sending reply via channel:", SafeDebugValue(chatType))
+
+    local ok, err
     if chatType == "WHISPER" then
-        SendChatMessage(reply, chatType, nil, sender)
+        ok, err = pcall(SendChatMessage, reply, chatType, nil, sender)
     else
-        SendChatMessage(reply, chatType)
+        ok, err = pcall(SendChatMessage, reply, chatType)
+    end
+
+    if not ok then
+        DebugPrint("SendChatMessage failed:", SafeDebugValue(err))
+        return
     end
 
     DebugPrint("Sent reply:", tostring(reply), "Channel:", tostring(chatType))
@@ -473,12 +544,9 @@ end
 
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_PARTY")
-frame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
 frame:RegisterEvent("CHAT_MSG_RAID")
-frame:RegisterEvent("CHAT_MSG_RAID_LEADER")
 frame:RegisterEvent("CHAT_MSG_GUILD")
 frame:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN")
-frame:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTACLE_OPEN")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -489,7 +557,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
-    if event == "CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN" or event == "CHALLENGE_MODE_KEYSTONE_RECEPTACLE_OPEN" then
+    if event == "CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN" then
         TryAutoSlotKeystone(...)
         return
     end

@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [1.1.3] - 2026-03-26
+
+### Fixed
+- Added debug logging around reply generation and `SendChatMessage` to diagnose any remaining chat-command failures.
+
+### Packaging
+- Built release archive at `Releases/1.1.3/KeyMaster.zip`.
+
+## [1.1.2] - 2026-03-26
+
+### Fixed
+- Added a bag-scan fallback for Mythic+ keystone links so `!key` and `!keys` can still reply when `C_MythicPlus.GetOwnedKeystoneLink()` does not return a link.
+
+### Packaging
+- Built release archive at `Releases/1.1.2/KeyMaster.zip`.
+
+## [1.1.1] - 2026-03-26
+
+### Fixed
+- Removed unused `NormalizeName` helper function (dead code).
+
+### Packaging
+- Built release archive at `Releases/1.1.1/KeyMaster.zip`.
+
 ## [1.1.0] - 2026-03-25
 
 ### Fixed
