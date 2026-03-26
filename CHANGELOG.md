@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [1.1.4] - 2026-03-26
+
+### Fixed
+- Replaced unreliable `CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN` event with `ChallengesKeystoneFrame:HookScript("OnShow")` pattern used by MythicPlusTimer and AstralKeys — more reliable and not subject to event rename breakage.
+- Auto-slot keystone now uses `C_Container.PickupContainerItem` + `CursorHasItem()` before calling `C_ChallengeMode.SlotKeystone()`, matching the proven MythicPlusTimer implementation.
+- Added `ADDON_LOADED` event handling to hook `Blizzard_ChallengesUI` when it loads (with fallback check at `PLAYER_LOGIN` if already loaded).
+- Expanded keystone item ID support to include all known variants: `180653` (Dragonflight/TWW), `158923` (BfA), `151086` (Legion).
+- Removed `GetCurrentReceptacleMapID` helper — map check now uses `C_ChallengeMode.GetActiveChallengeMapID()` directly.
+
+### Packaging
+- Built release archive at `Releases/1.1.4/KeyMaster.zip`.
+
 ## [1.1.3] - 2026-03-26
 
 ### Fixed

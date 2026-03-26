@@ -8,7 +8,7 @@ local strtrim = strtrim
 
 local frame = CreateFrame("Frame")
 local REPLY_PREFIX = "KeyMaster:"
-local KEYSTONE_ITEM_ID = 180653
+local KEYSTONE_ITEM_IDS = { [180653] = true, [158923] = true, [151086] = true }
 local KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
 local KEYS_TEXT_COMMAND = "!keys"
 local KEY_TEXT_COMMAND = "!key"
@@ -145,7 +145,7 @@ local function FindKeystoneItemLocation()
     for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
         local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
         for slotIndex = 1, slotCount do
-            if C_Container.GetContainerItemID(bagID, slotIndex) == KEYSTONE_ITEM_ID then
+            if KEYSTONE_ITEM_IDS[C_Container.GetContainerItemID(bagID, slotIndex)] then
                 return ItemLocation:CreateFromBagAndSlot(bagID, slotIndex)
             end
         end
@@ -500,65 +500,67 @@ local function HandleChatMessage(event, message, sender)
     DebugPrint("Sent reply:", tostring(reply), "Channel:", tostring(chatType))
 end
 
-local function GetCurrentReceptacleMapID(...)
-    local arg1 = ...
-    if type(arg1) == "number" and arg1 > 0 then
-        return arg1
-    end
-
-    if C_Map and C_Map.GetBestMapForUnit and C_ChallengeMode and C_ChallengeMode.GetMapIDFromWorldMapAreaID then
-        local uiMapID = C_Map.GetBestMapForUnit("player")
-        if uiMapID then
-            local challengeMapID = C_ChallengeMode.GetMapIDFromWorldMapAreaID(uiMapID)
-            if challengeMapID and challengeMapID > 0 then
-                return challengeMapID
-            end
-        end
-    end
-
-    if C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID then
-        local activeMapID = C_ChallengeMode.GetActiveChallengeMapID()
-        if activeMapID and activeMapID > 0 then
-            return activeMapID
-        end
-    end
-
-    return nil
-end
-
-local function TryAutoSlotKeystone(...)
+local function TryAutoSlotKeystone()
     if not (C_ChallengeMode and C_ChallengeMode.SlotKeystone) then
         return
     end
 
-    local ownedMapID = GetOwnedKeystoneMapID()
-
-    local receptacleMapID = GetCurrentReceptacleMapID(...)
-    if ownedMapID and receptacleMapID and ownedMapID ~= receptacleMapID then
-        ShowMismatchToast(ownedMapID, receptacleMapID)
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID and C_Container.PickupContainerItem) then
         return
     end
 
-    C_ChallengeMode.SlotKeystone()
+    local ownedMapID = GetOwnedKeystoneMapID()
+    local activeMapID = C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID()
+    if ownedMapID and activeMapID and activeMapID > 0 and ownedMapID ~= activeMapID then
+        ShowMismatchToast(ownedMapID, activeMapID)
+        return
+    end
+
+    for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
+        local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+        for slotIndex = 1, slotCount do
+            local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
+            if KEYSTONE_ITEM_IDS[itemID] then
+                C_Container.PickupContainerItem(bagID, slotIndex)
+                if CursorHasItem() then
+                    C_ChallengeMode.SlotKeystone()
+                end
+                return
+            end
+        end
+    end
 end
 
+local function HookChallengesFrame()
+    if ChallengesKeystoneFrame then
+        ChallengesKeystoneFrame:HookScript("OnShow", TryAutoSlotKeystone)
+        DebugPrint("Hooked ChallengesKeystoneFrame OnShow for auto-slot")
+    end
+end
+
+frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_PARTY")
 frame:RegisterEvent("CHAT_MSG_RAID")
 frame:RegisterEvent("CHAT_MSG_GUILD")
-frame:RegisterEvent("CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN")
 
 frame:SetScript("OnEvent", function(_, event, ...)
+    if event == "ADDON_LOADED" then
+        local loadedAddon = ...
+        if loadedAddon == "Blizzard_ChallengesUI" then
+            HookChallengesFrame()
+        end
+        return
+    end
+
     if event == "PLAYER_LOGIN" then
         if not KeyMasterDB then
             KeyMasterDB = {}
         end
+        if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
+            HookChallengesFrame()
+        end
         DebugPrint("Player logged in, initialized KeyMasterDB")
-        return
-    end
-
-    if event == "CHALLENGE_MODE_KEYSTONE_RECEPTABLE_OPEN" then
-        TryAutoSlotKeystone(...)
         return
     end
 
