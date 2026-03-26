@@ -1,7 +1,6 @@
 local addonName = ...
 
 local floor = math.floor
-local min = math.min
 local tconcat = table.concat
 local strlower = string.lower
 local strtrim = strtrim
@@ -13,8 +12,6 @@ local KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.B
 local KEYS_TEXT_COMMAND = "!keys"
 local KEY_TEXT_COMMAND = "!key"
 local SCORE_TEXT_COMMAND = "!score"
-local VAULT_TEXT_COMMAND = "!vault"
-local WEEKLY_TEXT_COMMAND = "!weekly"
 local BEST_TEXT_COMMAND = "!best"
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local lastMismatchToastAt = 0
@@ -285,36 +282,6 @@ local function BuildScoreReply()
     return string.format("%s M+ Score: %d", REPLY_PREFIX, floor(score + 0.5))
 end
 
-local function BuildVaultReply()
-    if not (C_WeeklyRewards and C_WeeklyRewards.GetActivities) then
-        return nil
-    end
-
-    local ok, activities = pcall(C_WeeklyRewards.GetActivities)
-    if not ok or type(activities) ~= "table" then
-        return nil
-    end
-
-    local activitiesType = Enum and Enum.WeeklyRewardChestThresholdType and Enum.WeeklyRewardChestThresholdType.Activities or 1
-    local byThreshold = {}
-
-    for _, activity in ipairs(activities) do
-        local threshold = activity and (activity.threshold or activity.level)
-        local progress = activity and activity.progress
-        local activityType = activity and activity.type
-        if type(threshold) == "number" and type(progress) == "number" and (activityType == activitiesType or activityType == 1) then
-            local capped = min(progress, threshold)
-            byThreshold[threshold] = string.format("%d/%d", capped, threshold)
-        end
-    end
-
-    local t1 = byThreshold[1] or "0/1"
-    local t4 = byThreshold[4] or "0/4"
-    local t8 = byThreshold[8] or "0/8"
-
-    return string.format("%s Vault M+: %s %s %s", REPLY_PREFIX, t1, t4, t8)
-end
-
 local function ResolveBestLevel(result1, result2)
     if type(result1) == "number" then
         return result1
@@ -431,8 +398,6 @@ local function IsKeyRequestMessage(message)
     return msg == KEY_TEXT_COMMAND
         or msg == KEYS_TEXT_COMMAND
         or msg == SCORE_TEXT_COMMAND
-        or msg == VAULT_TEXT_COMMAND
-        or msg == WEEKLY_TEXT_COMMAND
         or msg == BEST_TEXT_COMMAND
 end
 
@@ -445,10 +410,6 @@ local function BuildReplyForCommand(message)
 
     if msg == SCORE_TEXT_COMMAND then
         return BuildScoreReply()
-    end
-
-    if msg == VAULT_TEXT_COMMAND or msg == WEEKLY_TEXT_COMMAND then
-        return BuildVaultReply()
     end
 
     if msg == BEST_TEXT_COMMAND then

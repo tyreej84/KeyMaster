@@ -2,7 +2,7 @@
 ## Title: KeyMaster
 ## Notes: Auto-replies with your Mythic+ key and auto-slots matching keys at the Font of Power.
 ## Author: Karnytine-Stormrage (joe@tyreenet.com)
-## Version: 1.1.6
+## Version: 1.1.7
 ## SavedVariables: KeyMasterDB
 
 KeyMaster.lua

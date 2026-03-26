@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog.
 
+## [1.1.7] - 2026-03-26
+
+### Removed
+- Removed `!vault` and `!weekly` commands — they only reported completion counts, not vault reward item levels, so they provided insufficient information.
+
+### Packaging
+- Built release archive at `Releases/1.1.7/KeyMaster.zip`.
+
 ## [1.1.6] - 2026-03-26
 
 ### Fixed
