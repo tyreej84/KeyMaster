@@ -1,7 +1,6 @@
 local addonName = ...
 
 local floor = math.floor
-local tconcat = table.concat
 local strlower = string.lower
 local strtrim = strtrim
 
@@ -15,82 +14,10 @@ local SCORE_TEXT_COMMAND = "!score"
 local BEST_TEXT_COMMAND = "!best"
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local lastMismatchToastAt = 0
-local DEBUG_HISTORY_LIMIT = 25
-
-local function IsDebugEnabled()
-    return KeyMasterDB and KeyMasterDB.debug == true
-end
-
-local function AppendDebugHistory(message)
-    if not KeyMasterDB then
-        KeyMasterDB = {}
-    end
-
-    if type(KeyMasterDB.debugLog) ~= "table" then
-        KeyMasterDB.debugLog = {}
-    end
-
-    table.insert(KeyMasterDB.debugLog, message)
-    while #KeyMasterDB.debugLog > DEBUG_HISTORY_LIMIT do
-        table.remove(KeyMasterDB.debugLog, 1)
-    end
-end
-
-local function DebugPrint(...)
-    if not IsDebugEnabled() then
-        return
-    end
-
-    local parts = { ... }
-    local message = tconcat(parts, " ")
-    AppendDebugHistory(message)
-
-    if UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage("KeyMaster Debug: " .. message, 0.2, 1.0, 0.4, 1.0)
-    end
-
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99KeyMaster Debug:|r " .. message)
-    else
-        print("KeyMaster Debug: " .. message)
-    end
-end
-
-local function SafeDebugValue(value)
-    if value == nil then
-        return "<nil>"
-    end
-
-    return tostring(value)
-end
 
 SLASH_KEYMASTER1 = "/keymaster"
 SLASH_KEYMASTER2 = "/km"
-SlashCmdList.KEYMASTER = function(message)
-    local msg = strtrim(strlower(message or ""))
-
-    if msg == "debug" then
-        KeyMasterDB = KeyMasterDB or {}
-        KeyMasterDB.debug = not KeyMasterDB.debug
-        print(string.format("KeyMaster: debug %s", KeyMasterDB.debug and "enabled" or "disabled"))
-        return
-    end
-
-    if msg == "debuglog" then
-        KeyMasterDB = KeyMasterDB or {}
-        local debugLog = KeyMasterDB.debugLog or {}
-        print(string.format("KeyMaster: debug log entries: %d", #debugLog))
-        for index, entry in ipairs(debugLog) do
-            print(string.format("KeyMaster Debug[%d]: %s", index, tostring(entry)))
-        end
-        return
-    end
-
-    if msg ~= "" then
-        print("KeyMaster: slash command is active.")
-        return
-    end
-
+SlashCmdList.KEYMASTER = function()
     print("KeyMaster: loaded")
 end
 
@@ -229,7 +156,7 @@ local function GetOwnedKeystoneLink()
 
     return string.format(
         "|cffa335ee|Hkeystone:%d:%d:%d:%d:%d:%d:%d:%d|h%s|h|r",
-        KEYSTONE_ITEM_ID,
+        180653,
         mapID,
         keyLevel,
         0,
@@ -244,11 +171,8 @@ end
 local function BuildKeystoneReply()
     local keyLink = GetOwnedKeystoneLink()
     if keyLink then
-        DebugPrint("Resolved keystone link:", SafeDebugValue(keyLink))
         return string.format("%s %s", REPLY_PREFIX, keyLink)
     end
-
-    DebugPrint("Failed to resolve keystone link")
     return nil
 end
 
@@ -423,12 +347,10 @@ local function BuildReplyForCommand(message)
     return nil
 end
 
-local function HandleChatMessage(event, message, sender)
+local function HandleChatMessage(event, message)
     if not CHAT_EVENTS[event] then
         return
     end
-
-    DebugPrint("Event:", tostring(event), "Message:", tostring(message), "Sender:", tostring(sender))
 
     if not IsKeyRequestMessage(message) then
         return
@@ -436,33 +358,15 @@ local function HandleChatMessage(event, message, sender)
 
     local reply = BuildReplyForCommand(message)
     if not reply then
-        DebugPrint("No reply generated for command:", tostring(message))
         return
     end
-
-    DebugPrint("Built reply:", SafeDebugValue(reply))
 
     local chatType = CHAT_EVENT_TO_CHANNEL[event]
     if not chatType then
-        DebugPrint("No chat type mapping for event:", tostring(event))
         return
     end
 
-    DebugPrint("Sending reply via channel:", SafeDebugValue(chatType))
-
-    local ok, err
-    if chatType == "WHISPER" then
-        ok, err = pcall(SendChatMessage, reply, chatType, nil, sender)
-    else
-        ok, err = pcall(SendChatMessage, reply, chatType)
-    end
-
-    if not ok then
-        DebugPrint("SendChatMessage failed:", SafeDebugValue(err))
-        return
-    end
-
-    DebugPrint("Sent reply:", tostring(reply), "Channel:", tostring(chatType))
+    pcall(SendChatMessage, reply, chatType)
 end
 
 local function TryAutoSlotKeystone()
@@ -499,7 +403,6 @@ end
 local function HookChallengesFrame()
     if ChallengesKeystoneFrame then
         ChallengesKeystoneFrame:HookScript("OnShow", TryAutoSlotKeystone)
-        DebugPrint("Hooked ChallengesKeystoneFrame OnShow for auto-slot")
     end
 end
 
@@ -525,10 +428,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
             HookChallengesFrame()
         end
-        DebugPrint("Player logged in, initialized KeyMasterDB")
         return
     end
 
-    DebugPrint("Chat event received:", tostring(event))
     HandleChatMessage(event, ...)
 end)
