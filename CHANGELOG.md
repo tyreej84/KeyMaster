@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-03-28
+
+### Fixed
+- Completed-run summary now preserves and displays actual completion time instead of occasionally showing `00:00`.
+- Remaining-time display on completion now supports signed values; overtime is shown as a negative value and highlighted in red.
+- Added delayed completion-time refresh to pick up final run time when completion info arrives slightly after the completion event.
+
+### Packaging
+- Built release archive at `Releases/1.5.0/KeyMaster.zip`.
+
 ## [1.4.9] - 2026-03-28
 
 ### Added

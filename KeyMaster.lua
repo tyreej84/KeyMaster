@@ -592,6 +592,18 @@ local function FormatSeconds(seconds)
     return string.format("%02d:%02d", minutes, remainder)
 end
 
+local function FormatSignedSeconds(seconds)
+    if type(seconds) ~= "number" then
+        return FormatSeconds(0)
+    end
+
+    if seconds < 0 then
+        return string.format("-%s", FormatSeconds(-seconds))
+    end
+
+    return FormatSeconds(seconds)
+end
+
 local function ParsePercentValue(text)
     if type(text) ~= "string" then
         return nil
@@ -1473,7 +1485,10 @@ local function CaptureCompletedRunState()
     end
 
     local completionMaxTimeSeconds = source.maxTimeSeconds
-    local completionTimeLeftSeconds = 0
+    local completionTimeLeftSeconds = source.timeLeftSeconds
+    if type(completionElapsedSeconds) == "number" and type(completionMaxTimeSeconds) == "number" then
+        completionTimeLeftSeconds = completionMaxTimeSeconds - completionElapsedSeconds
+    end
 
     local upgradeLevels = completionUpgradeLevels
     if type(upgradeLevels) ~= "number" then
@@ -1516,6 +1531,26 @@ local function CaptureCompletedRunState()
         deathLog = CopyDeathLog(ui.deathLog),
         resultText = resultText,
     }
+end
+
+local function RefreshCompletedRunTimingFromAPI()
+    if not (ui.completedRun and C_ChallengeMode and C_ChallengeMode.GetCompletionInfo) then
+        return
+    end
+
+    local ok, _, _, completionTimeMs = pcall(C_ChallengeMode.GetCompletionInfo)
+    if not ok or type(completionTimeMs) ~= "number" or completionTimeMs <= 0 then
+        return
+    end
+
+    local elapsedSeconds = completionTimeMs / 1000
+    ui.completedRun.elapsedSeconds = elapsedSeconds
+
+    if type(ui.completedRun.maxTimeSeconds) == "number" then
+        ui.completedRun.timeLeftSeconds = ui.completedRun.maxTimeSeconds - elapsedSeconds
+    end
+
+    RefreshMythicUI()
 end
 
 local function CreateLine(parent, fontHeight)
@@ -1813,6 +1848,7 @@ local function RenderMythicUI()
             else
                 ui.timerLine:SetText(FormatSeconds(state.elapsedSeconds))
             end
+            ui.timerLine:SetTextColor(1, 1, 1, 1)
             ui.timerLine:SetWidth(width)
             ui.timerLine:ClearAllPoints()
             ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
@@ -1917,6 +1953,7 @@ local function RenderMythicUI()
 
             local elapsedSeconds = GetWorldElapsedSeconds() or 0
             ui.timerLine:SetText(string.format("%s (waiting for challenge data)", FormatSeconds(elapsedSeconds)))
+            ui.timerLine:SetTextColor(1, 1, 1, 1)
             ui.timerLine:SetWidth(width)
             ui.timerLine:ClearAllPoints()
             ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
@@ -1961,9 +1998,15 @@ local function RenderMythicUI()
             end
 
             if completed.maxTimeSeconds then
-                ui.timerLine:SetText(string.format("Completed: %s (%s left)", FormatSeconds(completed.elapsedSeconds or 0), FormatSeconds(max(0, completed.timeLeftSeconds or 0))))
+                ui.timerLine:SetText(string.format("Completed: %s (%s left)", FormatSeconds(completed.elapsedSeconds or 0), FormatSignedSeconds(completed.timeLeftSeconds or 0)))
+                if type(completed.timeLeftSeconds) == "number" and completed.timeLeftSeconds < 0 then
+                    ui.timerLine:SetTextColor(1, 0.25, 0.25, 1)
+                else
+                    ui.timerLine:SetTextColor(1, 1, 1, 1)
+                end
             else
                 ui.timerLine:SetText(string.format("Completed: %s", FormatSeconds(completed.elapsedSeconds or 0)))
+                ui.timerLine:SetTextColor(1, 1, 1, 1)
             end
             ui.timerLine:SetWidth(width)
             ui.timerLine:ClearAllPoints()
@@ -2404,6 +2447,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
         ui.inChallengeMode = false
         -- Match AstralKeys behavior: check shortly after completion so the rerolled key can be observed.
         ScheduleOwnedKeystoneObservation(true, 3)
+        if C_Timer and C_Timer.After then
+            C_Timer.After(2, RefreshCompletedRunTimingFromAPI)
+        end
         RefreshMythicUI()
         return
     end
