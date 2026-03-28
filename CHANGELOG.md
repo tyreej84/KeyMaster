@@ -2,6 +2,343 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.8] - 2026-03-28
+
+### Fixed
+- Blizzard objective tracker now returns correctly when the KeyMaster overlay is hidden or disabled, while still fading during active Mythic+ overlay use.
+- Improved Enemy Forces label readability by adding stronger text contrast over the blue progress bar.
+- Reworked death attribution to track party member death state directly from group units in addition to combat-log events, making hover details more reliable.
+
+### Packaging
+- Built release archive at `Releases/1.4.8/KeyMaster.zip`.
+
+## [1.4.7] - 2026-03-28
+
+### Changed
+- Updated README to reflect current behavior for chat command coverage, command matching tolerance, and fallback responses.
+- Documented current protected-action safety state: automatic keystone slotting remains disabled.
+- Added slash-command documentation for `/km deaths`, `/km criteria`, and `/km forces`.
+
+### Packaging
+- Built release archive at `Releases/1.4.7/KeyMaster.zip`.
+
+## [1.4.6] - 2026-03-27
+
+### Fixed
+- Corrected run-active detection so completed Mythic+ runs do not remain in an active-timer state after completion.
+- Completion view now zeroes the remaining timer at run end, restoring expected timer reset behavior.
+
+### Packaging
+- Built release archive at `Releases/1.4.6/KeyMaster.zip`.
+
+## [1.4.5] - 2026-03-27
+
+### Fixed
+- Restored suppression of the default Blizzard objective tracker during Mythic+ using alpha changes instead of frame reparenting.
+- This keeps the custom KeyMaster overlay visible without bringing back the earlier protected-action risk from tracker parent swaps.
+
+### Packaging
+- Built release archive at `Releases/1.4.5/KeyMaster.zip`.
+
+## [1.4.4] - 2026-03-27
+
+### Fixed
+- Improved `!key` and `!keys` reliability by detecting Mythic Keystones from actual bag hyperlinks, not only the owned-keystone API path.
+- Added direct bag-link fallback so players with a keystone in their bags are more likely to respond even when Blizzard keystone ownership APIs are late or inconsistent.
+
+### Packaging
+- Built release archive at `Releases/1.4.4/KeyMaster.zip`.
+
+## [1.4.3] - 2026-03-27
+
+### Fixed
+- Disabled automatic keystone slotting to eliminate the remaining protected-action path most likely causing Blizzard UI blocked popups.
+- Manual keystone slotting remains available through the default Blizzard UI.
+
+### Packaging
+- Built release archive at `Releases/1.4.3/KeyMaster.zip`.
+
+## [1.4.2] - 2026-03-27
+
+### Fixed
+- Removed direct Objective Tracker frame parent manipulation from runtime updates to avoid Blizzard protected-action taint errors.
+- This hotfix targets the "action only available to Blizzard UI" block message.
+
+### Packaging
+- Built release archive at `Releases/1.4.2/KeyMaster.zip`.
+
+## [1.4.1] - 2026-03-27
+
+### Fixed
+- Broadened death attribution capture gating to track group deaths whenever Mythic dungeon context is active, even if challenge-state APIs briefly lag.
+- Reduces cases where total deaths are shown but hover details fall back to `Unattributed` for the whole run.
+
+### Packaging
+- Built release archive at `Releases/1.4.1/KeyMaster.zip`.
+
+## [1.4.0] - 2026-03-27
+
+### Fixed
+- Auto-reply command parsing now tolerates color formatting and inline punctuation more robustly.
+- `!key`, `!keys`, `!score`, and `!best` now always return a response instead of failing silently when game API data is temporarily unavailable.
+- Added explicit fallback replies (`Keystone unavailable`, `M+ Score unavailable`) to make temporary data gaps clear.
+
+### Packaging
+- Built release archive at `Releases/1.4.0/KeyMaster.zip`.
+
+## [1.3.9] - 2026-03-27
+
+### Fixed
+- Expanded chat trigger coverage for auto-replies to include party/raid leader channels and instance chat channels.
+- Relaxed command parsing so requests like `!score?` and `!best.` still trigger replies.
+
+### Packaging
+- Built release archive at `Releases/1.3.9/KeyMaster.zip`.
+
+## [1.3.8] - 2026-03-27
+
+### Fixed
+- Improved death-name capture timing so per-player attribution is recorded more reliably during active Mythic dungeon runs.
+- Death tooltip now shows an `Unattributed` fallback count when Blizzard death totals exist but per-player names were unavailable.
+
+### Packaging
+- Built release archive at `Releases/1.3.8/KeyMaster.zip`.
+
+## [1.3.7] - 2026-03-27
+
+### Fixed
+- Enemy Forces bar text now truncates fractional percentages to match Blizzard-style integer display (for example, 85.5% now shows as 85% instead of 86%).
+
+### Packaging
+- Built release archive at `Releases/1.3.7/KeyMaster.zip`.
+
+## [1.3.6] - 2026-03-27
+
+### Fixed
+- Death attribution capture now prefers player GUID detection, making per-player death names more reliable in combat-log edge cases.
+- Death hover hitbox is now more robust and keeps an interactive area even when text width/height reports transient zero values.
+
+### Packaging
+- Built release archive at `Releases/1.3.6/KeyMaster.zip`.
+
+## [1.3.5] - 2026-03-27
+
+### Fixed
+- Reworked Enemy Forces percent calculation to follow MythicPlusTimer's criteria logic path first.
+- Weighted criteria now prefer MythicPlusTimer-compatible handling of `quantity`, `quantityString`, and `totalQuantity` before custom fallbacks.
+- Retained dungeon total-unit conversion only as fallback when criteria data is incomplete.
+
+### Packaging
+- Built release archive at `Releases/1.3.5/KeyMaster.zip`.
+
+## [1.3.4] - 2026-03-27
+
+### Fixed
+- Enemy Forces conversion now uses dungeon-specific total-unit values across the full current Midnight season dungeon pool.
+- Added mapID-based total-unit lookup for deterministic conversion, with name fallback handling for localization/name variants.
+- Added `/km forces` debug command to print live Enemy Forces mapping details (mapID, known total, cached total, criterion raw values).
+
+### Packaging
+- Built release archive at `Releases/1.3.4/KeyMaster.zip`.
+
+## [1.3.3] - 2026-03-27
+
+### Fixed
+- Completed-run panel now stays visible while you remain inside the Mythic+ dungeon and clears immediately when you leave (e.g., hearth out).
+- Improved weighted Enemy Forces fallback: when weighted quantity is absolute progress with a non-100 total, percent is now computed as `quantity / total * 100`.
+
+### Packaging
+- Built release archive at `Releases/1.3.3/KeyMaster.zip`.
+
+## [1.3.2] - 2026-03-27
+
+### Fixed
+- Fixed `/km criteria` runtime error (line 262) caused by early references to local helper functions that are declared later in file scope.
+- Criteria debug now uses direct Blizzard API calls within the command handler, preventing nil-function lookup errors.
+
+### Packaging
+- Built release archive at `Releases/1.3.2/KeyMaster.zip`.
+
+## [1.3.1] - 2026-03-27
+
+### Fixed
+- Replaced fuzzy Enemy Forces objective matching with strict normalized label matching against Blizzard's Enemy Forces criterion.
+- Removed broad substring matching (e.g., generic "forces") that could bind to the wrong weighted objective and show incorrect percentages.
+- Enemy Forces criterion selection is now deterministic and confidence-based among exact-name weighted candidates only.
+
+### Packaging
+- Built release archive at `Releases/1.3.1/KeyMaster.zip`.
+
+## [1.3.0] - 2026-03-27
+
+### Changed
+- Adopted rollover versioning policy: when patch reaches 9, the next release increments minor and resets patch to 0.
+- Promoted latest fixes into 1.3.0 under the new versioning scheme.
+
+### Packaging
+- Built release archive at `Releases/1.3.0/KeyMaster.zip`.
+
+## [1.2.14] - 2026-03-27
+
+### Fixed
+- Enemy Forces percent resolution now mirrors MythicPlusTimer weighted handling more closely after mid-run reloads.
+- For weighted Enemy Forces criteria, fallback now uses the weighted quantity directly (percent-like) instead of quantity/total conversion.
+- Percent parser now tolerates WoW color formatting and spacing variants like `88 %`, reducing false fallback to bad values.
+
+### Packaging
+- Built release archive at `Releases/1.2.14/KeyMaster.zip`.
+
+## [1.2.13] - 2026-03-27
+
+### Fixed
+- Enemy Forces bar mapping is now strict: it only binds to weighted-progress criteria whose name matches the Blizzard Enemy Forces label.
+- This removes ambiguous criterion fallback that could select a completed objective and incorrectly show 100% early.
+- Per-player death attribution now records while Mythic+ is actively detected (not only when the start-event flag is set), preventing missed capture from event ordering edge cases.
+
+### Packaging
+- Built release archive at `Releases/1.2.13/KeyMaster.zip`.
+
+## [1.2.12] - 2026-03-27
+
+### Fixed
+- `/km criteria` now always prints a status header and wraps debug collection in `pcall`, so failures are shown as chat errors instead of appearing to do nothing.
+
+### Packaging
+- Built release archive at `Releases/1.2.12/KeyMaster.zip`.
+
+## [1.2.11] - 2026-03-27
+
+### Fixed
+- Further tightened Enemy Forces criterion selection by preferring weighted-progress objectives with expected totals and computing percent from quantity/total when needed.
+- Fixed death-hover interaction while UI is locked by keeping frame mouse enabled (dragging is still blocked by lock checks).
+
+### Added
+- Added `/km criteria` debug command to print raw scenario criteria values (name, weighted flag, quantity, total, quantityString) for fast in-run diagnosis.
+
+### Packaging
+- Built release archive at `Releases/1.2.11/KeyMaster.zip`.
+
+## [1.2.10] - 2026-03-27
+
+### Fixed
+- Tightened Enemy Forces mapping again by prioritizing the localized Blizzard label (`CHALLENGE_MODE_ENEMY_FORCES`) on weighted-progress criteria.
+- Improved death-hover reliability by expanding the hover hit area to the full deaths row width.
+
+### Added
+- Added `/km deaths` to print per-player death attribution captured during the current/recent run.
+
+### Packaging
+- Built release archive at `Releases/1.2.10/KeyMaster.zip`.
+
+## [1.2.9] - 2026-03-26
+
+### Fixed
+- Tightened Enemy Forces detection to only use weighted-progress scenario criteria, matching the MythicPlusTimer approach more closely.
+- This avoids treating unrelated percentage-based objectives as Enemy Forces, which could cause the bar to jump to 100% on an early pull.
+- Improved the deaths hover area and tooltip behavior so hovering the deaths line always gives visible feedback.
+
+### Changed
+- Group death attribution now uses explicit combat-log player and affiliation flags for more reliable party-member tracking.
+
+### Packaging
+- Built release archive at `Releases/1.2.9/KeyMaster.zip`.
+
+## [1.2.8] - 2026-03-26
+
+### Added
+- Added a hover tooltip on the deaths line that shows which party members died and how many times.
+
+### Changed
+- Death tooltip data is tracked from `COMBAT_LOG_EVENT_UNFILTERED`, matching the combat-log-based approach used by MythicPlusTimer.
+- Death breakdown is preserved briefly on the completed-run summary as well.
+
+### Packaging
+- Built release archive at `Releases/1.2.8/KeyMaster.zip`.
+
+## [1.2.7] - 2026-03-26
+
+### Fixed
+- End-of-key summary now uses Blizzard's `C_ChallengeMode.GetCompletionInfo()` for final completion time and upgrade levels.
+- This prevents the completion display from falling back to `00:00` when the live world timer resets after dungeon completion.
+
+### Packaging
+- Built release archive at `Releases/1.2.7/KeyMaster.zip`.
+
+## [1.2.6] - 2026-03-26
+
+### Fixed
+- Enemy Forces now uses Blizzard-provided percentage text directly from scenario criteria (the `%` value), instead of inferred quantity/total math.
+- This prevents incorrect early 100% spikes caused by selecting non-forces criteria with ratio-style values.
+
+### Packaging
+- Built release archive at `Releases/1.2.6/KeyMaster.zip`.
+
+## [1.2.5] - 2026-03-26
+
+### Fixed
+- Fixed end-of-key timer resetting to `00:00` by capturing a completion snapshot and rendering that summary after `CHALLENGE_MODE_COMPLETED`.
+- Added explicit key result line showing `Result: +1`, `Result: +2`, `Result: +3`, or `Result: Depleted`.
+- Improved Enemy Forces objective detection to avoid false positives (such as immediate 100% from non-forces criteria).
+
+### Changed
+- Added a short post-completion display window showing final elapsed time, remaining time, and key result.
+
+### Packaging
+- Built release archive at `Releases/1.2.5/KeyMaster.zip`.
+
+## [1.2.4] - 2026-03-26
+
+### Fixed
+- Fixed inaccurate Enemy Forces progress by improving how the addon identifies the Enemy Forces scenario criterion.
+- Replaced first-match weighted detection with scored candidate selection using name, percent text, weighted flag, and quantity metadata.
+
+### Packaging
+- Built release archive at `Releases/1.2.4/KeyMaster.zip`.
+
+## [1.2.3] - 2026-03-26
+
+### Fixed
+- Fixed a render deadlock where the Mythic+ panel could remain hidden forever because visibility logic only ran in `OnUpdate` while the frame was hidden.
+- `RefreshMythicUI()` now performs an immediate render pass so event-driven updates can show the frame instantly.
+- Removed `PLAYER_ENTERING_WORLD` flag reset that could clear M+ state during key-start transitions.
+
+### Changed
+- Refactored UI drawing into a shared `RenderMythicUI()` routine used by both event refreshes and periodic timer refreshes.
+
+### Packaging
+- Built release archive at `Releases/1.2.3/KeyMaster.zip`.
+
+## [1.2.2] - 2026-03-26
+
+### Fixed
+- Fixed M+ overlay not appearing during actual Mythic+ runs by using event-driven detection like MythicPlusTimer.
+- Added `ui.inChallengeMode` flag that is set immediately when `CHALLENGE_MODE_START` event fires, bypassing API initialization delays.
+- Challenge mode detection now has higher priority for event-based signal over API queries.
+- Added "M+ detected: yes/no" output to `/km status` for better diagnostic visibility.
+
+### Changed
+- Improved event handling for `CHALLENGE_MODE_START`, `CHALLENGE_MODE_COMPLETED`, and `CHALLENGE_MODE_RESET` with dedicated handlers.
+- Challenge mode flag is now cleared on world transitions to prevent stale state.
+
+### Packaging
+- Built release archive at `Releases/1.2.2/KeyMaster.zip`.
+
+## [1.2.1] - 2026-03-26
+
+### Added
+- Added `/km status` to show current KeyMaster UI state (enabled, hidden, tracker-hide mode, lock state, scale, and anchor).
+- Added `/km ui restore` to re-enable and reset the KeyMaster UI to a known-good default position.
+- Added `Unlock UI` and `Lock UI` buttons to the KeyMaster settings panel.
+- Added a `Hide Blizzard objectives during Mythic+` setting (enabled by default).
+
+### Changed
+- Improved Mythic+ activity detection and added a fallback overlay state while challenge data initializes.
+- Changed default overlay anchor to top-right under the minimap.
+- Improved slash/help messaging for positioning and UI recovery.
+
+### Packaging
+- Built release archive at `Releases/1.2.1/KeyMaster.zip`.
+
 ## [1.2.0] - 2026-03-26
 
 ### Added

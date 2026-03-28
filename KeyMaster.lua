@@ -3,12 +3,15 @@ local addonName = ...
 local floor = math.floor
 local max = math.max
 local min = math.min
+local band = bit and bit.band or bit32 and bit32.band
 local strfind = string.find
 local strlower = string.lower
 local strmatch = string.match
-local strtrim = strtrim
+local strtrim = strtrim or function(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
 local tonumber = tonumber
 local unpack = unpack or table.unpack
+local IsChallengeModeRunActive
+local IsInMythicDungeonInstance
 
 local frame = CreateFrame("Frame")
 local REPLY_PREFIX = "KeyMaster:"
@@ -20,11 +23,13 @@ local SCORE_TEXT_COMMAND = "!score"
 local BEST_TEXT_COMMAND = "!best"
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local UI_REFRESH_INTERVAL_SECONDS = 0.2
+local COMPLETION_DISPLAY_SECONDS = 90
 local CHALLENGERS_PERIL_AFFIX_ID = 152
 local BREAK_TIMER_BLUE = { 0.15, 0.55, 1.00, 0.90 }
 local DEFAULT_DB = {
     ui = {
         enabled = true,
+        hideTrackerInMythicPlus = true,
         locked = true,
         hidden = false,
         scale = 1,
@@ -38,19 +43,385 @@ local ui = {
     lastRefreshAt = 0,
     challengesFrameHooked = false,
     trackerSuppressed = false,
+    inChallengeMode = false,
+    lastRunState = nil,
+    completedRun = nil,
+    deathLog = {},
+    deadUnitState = {},
+    enemyForcesTotalUnits = nil,
+    enemyForcesMapID = nil,
+}
+
+local ENEMY_FORCES_TOTAL_UNITS_BY_MAP_ID = {
+    [402] = 460, -- Algethar Academy
+    [239] = 568, -- Seat of the Triumvirate
+    [556] = 643, -- Pit of Saron
+    [557] = 591, -- Windrunner Spire
+    [558] = 597, -- Magisters Terrace
+    [559] = 596, -- Nexus Point Xenas
+    [560] = 607, -- Maisara Caverns
+    [161] = 431, -- Skyreach
+    [12345] = 470, -- Murder Row (custom map id in reference data)
+}
+
+local ENEMY_FORCES_TOTAL_UNITS_BY_DUNGEON = {
+    ["algethar academy"] = 460,
+    ["pit of saron"] = 643,
+    ["seat of the triumvirate"] = 568,
+    ["windrunners spire"] = 591,
+    ["magisters terrace"] = 597,
+    ["magisters terrace"] = 597,
+    ["nexus point xenas"] = 596,
+    ["maisara caverns"] = 607,
+    ["skyreach"] = 431,
+    ["murder row"] = 470,
 }
 
 local CHAT_EVENTS = {
     CHAT_MSG_PARTY = true,
+    CHAT_MSG_PARTY_LEADER = true,
     CHAT_MSG_RAID = true,
+    CHAT_MSG_RAID_LEADER = true,
+    CHAT_MSG_INSTANCE_CHAT = true,
+    CHAT_MSG_INSTANCE_CHAT_LEADER = true,
     CHAT_MSG_GUILD = true,
 }
 
 local CHAT_EVENT_TO_CHANNEL = {
     CHAT_MSG_PARTY = "PARTY",
+    CHAT_MSG_PARTY_LEADER = "PARTY",
     CHAT_MSG_RAID = "RAID",
+    CHAT_MSG_RAID_LEADER = "RAID",
+    CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT",
+    CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
     CHAT_MSG_GUILD = "GUILD",
 }
+
+local function ResetDeathLog()
+    ui.deathLog = {}
+    ui.deadUnitState = {}
+end
+
+local function ResetEnemyForcesCalibration()
+    ui.enemyForcesTotalUnits = nil
+    ui.enemyForcesMapID = nil
+end
+
+local function NormalizePlayerDisplayName(name, realm)
+    if type(name) ~= "string" or name == "" then
+        return "Unknown"
+    end
+
+    if type(realm) == "string" and realm ~= "" then
+        return string.format("%s-%s", name, realm)
+    end
+
+    return name
+end
+
+local function RecordDeathEntry(playerName)
+    if type(playerName) ~= "string" or playerName == "" then
+        return
+    end
+
+    local existing = ui.deathLog[playerName]
+    if existing then
+        existing.count = existing.count + 1
+        existing.lastAt = GetTime()
+        return
+    end
+
+    ui.deathLog[playerName] = {
+        name = playerName,
+        count = 1,
+        lastAt = GetTime(),
+    }
+end
+
+local function ShouldTrackDeathAttribution()
+    return ui.inChallengeMode
+        or (IsInMythicDungeonInstance and IsInMythicDungeonInstance())
+        or (IsChallengeModeRunActive and IsChallengeModeRunActive())
+end
+
+local function SyncGroupDeathLogFromUnits()
+    if not ShouldTrackDeathAttribution() then
+        ui.deadUnitState = {}
+        return
+    end
+
+    local nextDeadUnitState = {}
+    local groupUnits = { "player", "party1", "party2", "party3", "party4" }
+
+    for _, unitToken in ipairs(groupUnits) do
+        if UnitExists and UnitExists(unitToken) then
+            local unitGUID = UnitGUID and UnitGUID(unitToken) or nil
+            if type(unitGUID) == "string" and unitGUID ~= "" then
+                local isDead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unitToken)
+                if isDead then
+                    nextDeadUnitState[unitGUID] = true
+                    if not ui.deadUnitState[unitGUID] then
+                        local unitName, unitRealm = UnitName(unitToken)
+                        RecordDeathEntry(NormalizePlayerDisplayName(unitName, unitRealm))
+                    end
+                end
+            end
+        end
+    end
+
+    ui.deadUnitState = nextDeadUnitState
+end
+
+local function ResolveCombatLogPlayerName(destGUID, destName)
+    if GetPlayerInfoByGUID and type(destGUID) == "string" then
+        local _, _, _, _, _, resolvedName, resolvedRealm = GetPlayerInfoByGUID(destGUID)
+        if type(resolvedName) == "string" and resolvedName ~= "" then
+            return NormalizePlayerDisplayName(resolvedName, resolvedRealm)
+        end
+    end
+
+    if type(destName) == "string" and destName ~= "" then
+        return destName
+    end
+
+    return "Unknown"
+end
+
+local function IsPlayerGUID(guid)
+    return type(guid) == "string" and guid:match("^Player%-%d+%-%x+") ~= nil
+end
+
+local function IsTrackedGroupDeath(destGUID, destFlags)
+    if IsPlayerGUID(destGUID) then
+        return true
+    end
+
+    if type(destFlags) ~= "number" then
+        return false
+    end
+
+    if band and COMBATLOG_OBJECT_TYPE_PLAYER and COMBATLOG_OBJECT_AFFILIATION_MINE and COMBATLOG_OBJECT_AFFILIATION_PARTY and COMBATLOG_OBJECT_AFFILIATION_RAID then
+        local isPlayer = band(destFlags, COMBATLOG_OBJECT_TYPE_PLAYER) > 0
+        local isMine = band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0
+        local isParty = band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
+        local isRaid = band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
+        return isPlayer and (isMine or isParty or isRaid)
+    end
+
+    if CombatLog_Object_IsA then
+        local isGroup = CombatLog_Object_IsA(destFlags, COMBATLOG_FILTER_GROUP)
+        local isPlayerType = CombatLog_Object_IsA(destFlags, COMBATLOG_FILTER_TYPE_PLAYER)
+        return isGroup and isPlayerType
+    end
+
+    return false
+end
+
+local function RecordGroupDeath(destGUID, destName, destFlags)
+    if not ShouldTrackDeathAttribution() then
+        return
+    end
+
+    if not IsTrackedGroupDeath(destGUID, destFlags) then
+        return
+    end
+
+    local playerName = ResolveCombatLogPlayerName(destGUID, destName)
+    RecordDeathEntry(playerName)
+end
+
+local function BuildDeathTooltipLines(deathLog)
+    local entries = {}
+    for _, entry in pairs(deathLog or {}) do
+        table.insert(entries, entry)
+    end
+
+    table.sort(entries, function(left, right)
+        if left.count == right.count then
+            return left.name < right.name
+        end
+
+        return left.count > right.count
+    end)
+
+    return entries
+end
+
+local function CopyDeathLog(source)
+    local result = {}
+    for name, entry in pairs(source or {}) do
+        result[name] = {
+            name = entry.name or name,
+            count = entry.count or 0,
+            lastAt = entry.lastAt,
+        }
+    end
+
+    return result
+end
+
+local function GetDisplayedDeathLog()
+    if ui.inChallengeMode then
+        return ui.deathLog
+    end
+
+    if ui.completedRun and ui.completedRun.deathLog then
+        return ui.completedRun.deathLog
+    end
+
+    return nil
+end
+
+local function GetDisplayedDeathCount()
+    if ui.inChallengeMode and ui.lastRunState then
+        return ui.lastRunState.deathCount or 0
+    end
+
+    if ui.completedRun then
+        return ui.completedRun.deathCount or 0
+    end
+
+    return 0
+end
+
+local function ShowDeathTooltip(owner)
+    local deathEntries = BuildDeathTooltipLines(GetDisplayedDeathLog())
+    local totalDeaths = GetDisplayedDeathCount()
+    if totalDeaths <= 0 then
+        return
+    end
+
+    GameTooltip:Hide()
+    GameTooltip:ClearLines()
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(string.format("Deaths: %d", totalDeaths), 1, 1, 1)
+
+    if #deathEntries == 0 then
+        GameTooltip:AddDoubleLine("Unattributed", tostring(totalDeaths), 1, 1, 1, 1, 0.82, 0)
+        GameTooltip:AddLine("Per-player names were unavailable for these deaths (combat-log range or timing).", 0.9, 0.9, 0.9, true)
+        GameTooltip:Show()
+        return
+    end
+
+    for _, entry in ipairs(deathEntries) do
+        GameTooltip:AddDoubleLine(entry.name, tostring(entry.count), 1, 1, 1, 1, 0.82, 0)
+    end
+
+    GameTooltip:Show()
+end
+
+local function UpdateDeathTooltipArea()
+    if not ui.deathHitArea or not ui.deathLine then
+        return
+    end
+
+    if not ui.deathLine:IsShown() then
+        ui.deathHitArea:Hide()
+        return
+    end
+
+    local width = max(ui.deathLine:GetWidth() or 0, ui.deathLine:GetStringWidth() or 0)
+    local height = ui.deathLine:GetStringHeight() or 0
+
+    if width <= 0 and ui.frame then
+        width = max(120, (ui.frame:GetWidth() or 0) - 24)
+    end
+
+    if height <= 0 then
+        height = 16
+    end
+
+    ui.deathHitArea:ClearAllPoints()
+    ui.deathHitArea:SetPoint("TOPLEFT", ui.deathLine, "TOPLEFT", -2, 2)
+    ui.deathHitArea:SetSize(width + 4, height + 4)
+    ui.deathHitArea:Show()
+end
+
+local function PrintDeathLogSummary()
+    local totalDeaths = GetDisplayedDeathCount()
+    local entries = BuildDeathTooltipLines(GetDisplayedDeathLog())
+
+    if totalDeaths <= 0 then
+        PrintLocal("No deaths recorded in the current or most recent Mythic+ run")
+        return
+    end
+
+    PrintLocal(string.format("Deaths tracked: %d", totalDeaths))
+    if #entries == 0 then
+        PrintLocal("No per-player death attribution captured")
+        return
+    end
+
+    for _, entry in ipairs(entries) do
+        PrintLocal(string.format("%s: %d", entry.name, entry.count))
+    end
+end
+
+local function PrintCriteriaDebugSummary()
+    local challengeActive = false
+    if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive then
+        challengeActive = C_ChallengeMode.IsChallengeModeActive() == true
+    end
+    PrintLocal(string.format("Criteria debug: M+ detected=%s", challengeActive and "yes" or "no"))
+
+    local criteriaCount = 0
+    if C_Scenario and C_Scenario.GetStepInfo then
+        local _, _, count = C_Scenario.GetStepInfo()
+        if type(count) == "number" and count > 0 then
+            criteriaCount = count
+        end
+    end
+
+    if criteriaCount <= 0 then
+        PrintLocal("No scenario criteria available")
+        return
+    end
+
+    PrintLocal(string.format("Criteria count: %d", criteriaCount))
+    for index = 1, criteriaCount do
+        local info
+        if C_ScenarioInfo and C_ScenarioInfo.GetCriteriaInfo then
+            local ok, criteriaInfo = pcall(C_ScenarioInfo.GetCriteriaInfo, index)
+            if ok and type(criteriaInfo) == "table" then
+                info = {
+                    name = criteriaInfo.criteriaString or criteriaInfo.description or criteriaInfo.name or string.format("Objective %d", index),
+                    completed = criteriaInfo.completed == true,
+                    quantity = type(criteriaInfo.quantity) == "number" and criteriaInfo.quantity or 0,
+                    totalQuantity = type(criteriaInfo.totalQuantity) == "number" and criteriaInfo.totalQuantity or 0,
+                    quantityString = criteriaInfo.quantityString,
+                    isWeightedProgress = criteriaInfo.isWeightedProgress == true,
+                }
+            end
+        end
+
+        if not info and C_Scenario and C_Scenario.GetCriteriaInfo then
+            local ok, name, _, completed, quantity, totalQuantity, _, _, quantityString, _, _, _, _, isWeightedProgress = pcall(C_Scenario.GetCriteriaInfo, index)
+            if ok then
+                info = {
+                    name = name or string.format("Objective %d", index),
+                    completed = completed == true,
+                    quantity = type(quantity) == "number" and quantity or 0,
+                    totalQuantity = type(totalQuantity) == "number" and totalQuantity or 0,
+                    quantityString = quantityString,
+                    isWeightedProgress = isWeightedProgress == true,
+                }
+            end
+        end
+
+        if info then
+            PrintLocal(string.format(
+                "%d) %s | weighted=%s | completed=%s | quantity=%s | total=%s | qstr=%s",
+                index,
+                info.name or "?",
+                info.isWeightedProgress and "yes" or "no",
+                info.completed and "yes" or "no",
+                tostring(info.quantity),
+                tostring(info.totalQuantity),
+                tostring(info.quantityString)
+            ))
+        end
+    end
+end
 
 local function CopyDefaults(source, destination)
     if type(destination) ~= "table" then
@@ -89,6 +460,10 @@ local function InitializeDatabase()
 
     if type(KeyMasterDB.ui.enabled) ~= "boolean" then
         KeyMasterDB.ui.enabled = DEFAULT_DB.ui.enabled
+    end
+
+    if type(KeyMasterDB.ui.hideTrackerInMythicPlus) ~= "boolean" then
+        KeyMasterDB.ui.hideTrackerInMythicPlus = DEFAULT_DB.ui.hideTrackerInMythicPlus
     end
 
     if type(KeyMasterDB.ui.locked) ~= "boolean" then
@@ -130,21 +505,36 @@ local function GetOwnedKeystoneMapID()
     return nil
 end
 
-local function FindKeystoneItemLocation()
+local function IsKeystoneLink(link)
+    return type(link) == "string" and link:find("|Hkeystone:", 1, true) ~= nil
+end
+
+local function FindKeystoneBagSlot()
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID) then
-        return nil
+        return nil, nil, nil
     end
 
     for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
         local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
         for slotIndex = 1, slotCount do
-            if KEYSTONE_ITEM_IDS[C_Container.GetContainerItemID(bagID, slotIndex)] then
-                return ItemLocation:CreateFromBagAndSlot(bagID, slotIndex)
+            local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
+            local bagLink = C_Container.GetContainerItemLink and C_Container.GetContainerItemLink(bagID, slotIndex) or nil
+            if KEYSTONE_ITEM_IDS[itemID] or IsKeystoneLink(bagLink) then
+                return bagID, slotIndex, bagLink
             end
         end
     end
 
-    return nil
+    return nil, nil, nil
+end
+
+local function FindKeystoneItemLocation()
+    local bagID, slotIndex = FindKeystoneBagSlot()
+    if bagID == nil or slotIndex == nil or not (ItemLocation and ItemLocation.CreateFromBagAndSlot) then
+        return nil
+    end
+
+    return ItemLocation:CreateFromBagAndSlot(bagID, slotIndex)
 end
 
 local function GetKeystoneMapName(mapID)
@@ -206,7 +596,12 @@ local function ParsePercentValue(text)
         return nil
     end
 
-    local percentText = strmatch(text, "(%d+%.?%d*)%%")
+    -- Strip WoW color/format control bytes and tolerate localized spacing like "88 %".
+    local normalizedText = text
+        :gsub("|c%x%x%x%x%x%x%x%x", "")
+        :gsub("|r", "")
+        :gsub(",", ".")
+    local percentText = strmatch(normalizedText, "(%d+%.?%d*)%s*%%")
     if percentText then
         return tonumber(percentText)
     end
@@ -254,6 +649,11 @@ local function GetOwnedKeystoneLink()
         end
     end
 
+    local _, _, bagLink = FindKeystoneBagSlot()
+    if bagLink then
+        return bagLink
+    end
+
     local itemLocation = FindKeystoneItemLocation()
     if itemLocation and C_Item and C_Item.GetItemLink then
         local link = C_Item.GetItemLink(itemLocation)
@@ -291,7 +691,7 @@ local function BuildKeystoneReply()
         return string.format("%s %s", REPLY_PREFIX, keyLink)
     end
 
-    return nil
+    return string.format("%s Keystone unavailable", REPLY_PREFIX)
 end
 
 local function GetMythicPlusScore()
@@ -317,11 +717,11 @@ end
 
 local function BuildScoreReply()
     local score = GetMythicPlusScore()
-    if not score then
-        return nil
+    if type(score) == "number" and score >= 0 then
+        return string.format("%s M+ Score: %d", REPLY_PREFIX, floor(score + 0.5))
     end
 
-    return string.format("%s M+ Score: %d", REPLY_PREFIX, floor(score + 0.5))
+    return string.format("%s M+ Score unavailable", REPLY_PREFIX)
 end
 
 local function ResolveBestLevel(result1, result2)
@@ -421,10 +821,6 @@ local function BuildBestReply()
         seasonBest = seasonBest or mapSeasonBest
     end
 
-    if not weekBest and not seasonBest then
-        return nil
-    end
-
     return string.format(
         "%s Best - Week: %s / Season: %s",
         REPLY_PREFIX,
@@ -433,30 +829,45 @@ local function BuildBestReply()
     )
 end
 
-local function IsKeyRequestMessage(message)
-    if not message then
-        return false
+local function ExtractRequestCommand(message)
+    if type(message) ~= "string" or message == "" then
+        return nil
     end
 
     local msg = strtrim(strlower(message))
-    return msg == KEY_TEXT_COMMAND
-        or msg == KEYS_TEXT_COMMAND
-        or msg == SCORE_TEXT_COMMAND
-        or msg == BEST_TEXT_COMMAND
+    msg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+
+    local command = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
+    if not command then
+        return nil
+    end
+
+    command = command:gsub("[,%.%?!;:]+$", "")
+    if command == KEY_TEXT_COMMAND
+        or command == KEYS_TEXT_COMMAND
+        or command == SCORE_TEXT_COMMAND
+        or command == BEST_TEXT_COMMAND then
+        return command
+    end
+
+    return nil
 end
 
 local function BuildReplyForCommand(message)
-    local msg = strtrim(strlower(message or ""))
+    local command = ExtractRequestCommand(message)
+    if not command then
+        return nil
+    end
 
-    if msg == KEY_TEXT_COMMAND or msg == KEYS_TEXT_COMMAND then
+    if command == KEY_TEXT_COMMAND or command == KEYS_TEXT_COMMAND then
         return BuildKeystoneReply()
     end
 
-    if msg == SCORE_TEXT_COMMAND then
+    if command == SCORE_TEXT_COMMAND then
         return BuildScoreReply()
     end
 
-    if msg == BEST_TEXT_COMMAND then
+    if command == BEST_TEXT_COMMAND then
         return BuildBestReply()
     end
 
@@ -468,11 +879,12 @@ local function HandleChatMessage(event, message)
         return
     end
 
-    if not IsKeyRequestMessage(message) then
+    local command = ExtractRequestCommand(message)
+    if not command then
         return
     end
 
-    local reply = BuildReplyForCommand(message)
+    local reply = BuildReplyForCommand(command)
     if not reply then
         return
     end
@@ -592,15 +1004,29 @@ local function GetWorldElapsedSeconds()
     return nil
 end
 
-local function IsChallengeModeRunActive()
-    if not (C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive()) then
-        return false
+IsChallengeModeRunActive = function()
+    -- First check: if we explicitly received a CHALLENGE_MODE_START event, trust that
+    if ui.inChallengeMode then
+        return true
     end
 
-    local _, _, difficultyID = GetInstanceInfo()
-    local elapsedSeconds = GetWorldElapsedSeconds()
+    if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then
+        return true
+    end
 
-    return difficultyID == 8 and type(elapsedSeconds) == "number" and elapsedSeconds >= 0
+    if C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID then
+        local activeMapID = C_ChallengeMode.GetActiveChallengeMapID()
+        if type(activeMapID) == "number" and activeMapID > 0 then
+            return true
+        end
+    end
+
+    return false
+end
+
+IsInMythicDungeonInstance = function()
+    local _, instanceType, difficultyID = GetInstanceInfo()
+    return instanceType == "party" and difficultyID == 8
 end
 
 local function GetCriteriaCount()
@@ -646,39 +1072,162 @@ local function NormalizeCriteriaInfo(index)
     return nil
 end
 
-local function IsEnemyForcesCriteria(criteriaInfo)
-    if not criteriaInfo then
+local function NormalizeObjectiveText(text)
+    if type(text) ~= "string" then
+        return ""
+    end
+
+    local normalized = text
+        :gsub("|c%x%x%x%x%x%x%x%x", "")
+        :gsub("|r", "")
+        :gsub("[\226\128\153\226\128\152`']", "")
+        :gsub("[%-%_%./]", " ")
+    normalized = strlower(normalized)
+    normalized = normalized:gsub("[%(%):;,]", " ")
+    normalized = normalized:gsub("%s+", " ")
+    return strtrim(normalized)
+end
+
+local function GetKnownEnemyForcesTotalUnits(mapID, mapName)
+    if type(mapID) == "number" and mapID > 0 then
+        local totalByMapID = ENEMY_FORCES_TOTAL_UNITS_BY_MAP_ID[mapID]
+        if type(totalByMapID) == "number" and totalByMapID > 0 then
+            return totalByMapID
+        end
+    end
+
+    local normalizedMapName = NormalizeObjectiveText(mapName)
+    if normalizedMapName == "" then
+        return nil
+    end
+
+    return ENEMY_FORCES_TOTAL_UNITS_BY_DUNGEON[normalizedMapName]
+end
+
+local function IsEnemyForcesName(name)
+    local normalizedName = NormalizeObjectiveText(name)
+    if normalizedName == "" then
         return false
     end
 
-    if criteriaInfo.isWeightedProgress then
+    local enemyForcesLabel = NormalizeObjectiveText(CHALLENGE_MODE_ENEMY_FORCES)
+    if enemyForcesLabel ~= "" and normalizedName == enemyForcesLabel then
         return true
     end
 
-    local name = strlower(criteriaInfo.name or "")
-    return strfind(name, "enemy forces", 1, true) ~= nil
+    return normalizedName == "enemy forces"
 end
 
-local function GetCriteriaState()
-    local criteriaCount = GetCriteriaCount()
-    local objectives = {}
-    local enemyForces
+local function ResolveEnemyForcesPercent(criteriaInfo, mapID, mapName)
+    if not criteriaInfo then
+        return nil
+    end
 
-    for index = 1, criteriaCount do
-        local info = NormalizeCriteriaInfo(index)
-        if info then
-            if IsEnemyForcesCriteria(info) and not enemyForces then
-                enemyForces = info
-            else
-                table.insert(objectives, info)
+    if type(mapID) == "number" and mapID > 0 and ui.enemyForcesMapID ~= mapID then
+        ui.enemyForcesMapID = mapID
+        ui.enemyForcesTotalUnits = nil
+    end
+
+    if type(ui.enemyForcesTotalUnits) ~= "number" or ui.enemyForcesTotalUnits <= 0 then
+        local knownTotalUnits = GetKnownEnemyForcesTotalUnits(mapID, mapName)
+        if type(knownTotalUnits) == "number" and knownTotalUnits > 0 then
+            ui.enemyForcesTotalUnits = knownTotalUnits
+        end
+    end
+
+    if criteriaInfo.completed then
+        return 100
+    end
+
+    -- Mirror MythicPlusTimer behavior first:
+    -- 1) treat weighted quantity as percent-like by default
+    -- 2) but if quantityString includes %, parse and use it as current value
+    -- 3) when parsed-from-string, compute percent via value/totalQuantity
+    local quantityValue = type(criteriaInfo.quantity) == "number" and criteriaInfo.quantity or nil
+    local useDirectPercent = criteriaInfo.isWeightedProgress == true
+
+    local quantityStringPercent = ParsePercentValue(criteriaInfo.quantityString)
+    if criteriaInfo.isWeightedProgress and type(quantityStringPercent) == "number" then
+        quantityValue = quantityStringPercent
+        useDirectPercent = false
+
+        if type(criteriaInfo.quantity) == "number" and criteriaInfo.quantity > 0 and quantityStringPercent > 0 then
+            local estimatedTotalUnits = (criteriaInfo.quantity * 100) / quantityStringPercent
+            if estimatedTotalUnits > 100 and estimatedTotalUnits < 5000 then
+                ui.enemyForcesTotalUnits = estimatedTotalUnits
             end
         end
     end
 
-    return objectives, enemyForces
+    if type(quantityValue) == "number" then
+        if useDirectPercent then
+            return min(100, max(0, quantityValue))
+        end
+
+        if type(criteriaInfo.totalQuantity) == "number" and criteriaInfo.totalQuantity > 0 then
+            return min(100, max(0, (quantityValue / criteriaInfo.totalQuantity) * 100))
+        end
+    end
+
+    if type(criteriaInfo.quantity) == "number" and type(ui.enemyForcesTotalUnits) == "number" and ui.enemyForcesTotalUnits > 0 then
+        return min(100, max(0, (criteriaInfo.quantity / ui.enemyForcesTotalUnits) * 100))
+    end
+
+    return nil
+end
+
+local function GetCriteriaState(mapID, mapName)
+    local criteriaCount = GetCriteriaCount()
+    local objectives = {}
+    local enemyForcesIndex
+    local enemyForcesPercent
+    local bestConfidence = -1
+
+    for index = 1, criteriaCount do
+        local info = NormalizeCriteriaInfo(index)
+        if info then
+            table.insert(objectives, info)
+
+            if IsEnemyForcesName(info.name) then
+                local percent = ResolveEnemyForcesPercent(info, mapID, mapName)
+
+                local confidence = 0
+                if ParsePercentValue(info.quantityString) ~= nil then
+                    confidence = confidence + 3
+                end
+                if info.isWeightedProgress then
+                    confidence = confidence + 2
+                end
+                if type(info.totalQuantity) == "number" and info.totalQuantity > 0 then
+                    confidence = confidence + 1
+                end
+                if info.completed then
+                    confidence = confidence + 1
+                end
+
+                if type(percent) == "number" and confidence > bestConfidence then
+                    bestConfidence = confidence
+                    enemyForcesPercent = percent
+                    enemyForcesIndex = #objectives
+                end
+            end
+        end
+    end
+
+    if enemyForcesIndex and type(enemyForcesPercent) == "number" then
+        table.remove(objectives, enemyForcesIndex)
+    else
+        enemyForcesPercent = nil
+    end
+
+    return objectives, enemyForcesPercent
 end
 
 local function CalculateEnemyForcesPercent(enemyInfo)
+    if type(enemyInfo) == "number" then
+        return min(100, max(0, enemyInfo))
+    end
+
     if not enemyInfo then
         return nil
     end
@@ -749,7 +1298,7 @@ local function GetActiveRunState()
     local maxTimeSeconds = GetChallengeMapTimeLimit(mapID)
     local elapsedSeconds = GetWorldElapsedSeconds() or 0
     local level, affixIDs = GetActiveKeystoneDetails()
-    local objectives, enemyForces = GetCriteriaState()
+    local objectives, enemyForcesPercent = GetCriteriaState(mapID, mapName)
     local deathCount, deathPenalty = GetDeathState()
     local _, _, _, _, _, _, _, instanceMapID = GetInstanceInfo()
 
@@ -778,9 +1327,103 @@ local function GetActiveRunState()
         twoChestLimit = twoChestLimit,
         threeChestLimit = threeChestLimit,
         objectives = objectives,
-        enemyForces = enemyForces,
+        enemyForcesPercent = enemyForcesPercent,
         deathCount = deathCount,
         deathPenalty = deathPenalty,
+    }
+end
+
+local function GetUpgradeLevels(state)
+    if not state or type(state.elapsedSeconds) ~= "number" or type(state.maxTimeSeconds) ~= "number" then
+        return nil
+    end
+
+    if type(state.threeChestLimit) == "number" and state.elapsedSeconds <= state.threeChestLimit then
+        return 3
+    end
+
+    if type(state.twoChestLimit) == "number" and state.elapsedSeconds <= state.twoChestLimit then
+        return 2
+    end
+
+    if state.elapsedSeconds <= state.maxTimeSeconds then
+        return 1
+    end
+
+    return 0
+end
+
+local function CaptureCompletedRunState()
+    local source = ui.lastRunState or GetActiveRunState()
+    if not source then
+        return
+    end
+
+    local completionMapID
+    local completionLevel
+    local completionTimeMs
+    local completionOnTime
+    local completionUpgradeLevels
+
+    if C_ChallengeMode and C_ChallengeMode.GetCompletionInfo then
+        local ok, mapChallengeModeID, level, time, onTime, keystoneUpgradeLevels = pcall(C_ChallengeMode.GetCompletionInfo)
+        if ok then
+            completionMapID = mapChallengeModeID
+            completionLevel = level
+            completionTimeMs = time
+            completionOnTime = onTime
+            completionUpgradeLevels = keystoneUpgradeLevels
+        end
+    end
+
+    local completionElapsedSeconds = source.elapsedSeconds
+    if type(completionTimeMs) == "number" and completionTimeMs > 0 then
+        completionElapsedSeconds = completionTimeMs / 1000
+    end
+
+    local completionMaxTimeSeconds = source.maxTimeSeconds
+    local completionTimeLeftSeconds = 0
+
+    local upgradeLevels = completionUpgradeLevels
+    if type(upgradeLevels) ~= "number" then
+        local upgradedSource = {
+            elapsedSeconds = completionElapsedSeconds,
+            maxTimeSeconds = completionMaxTimeSeconds,
+            twoChestLimit = source.twoChestLimit,
+            threeChestLimit = source.threeChestLimit,
+        }
+        upgradeLevels = GetUpgradeLevels(upgradedSource)
+    elseif completionOnTime == false and upgradeLevels <= 0 then
+        upgradeLevels = 0
+    end
+
+    local resultText
+    if upgradeLevels == 3 then
+        resultText = "Result: +3"
+    elseif upgradeLevels == 2 then
+        resultText = "Result: +2"
+    elseif upgradeLevels == 1 then
+        resultText = "Result: +1"
+    elseif upgradeLevels == 0 then
+        resultText = "Result: Depleted"
+    else
+        resultText = "Result: Completed"
+    end
+
+    ui.completedRun = {
+        completedAt = GetTime(),
+        mapName = GetKeystoneMapName(completionMapID) or source.mapName,
+        level = completionLevel or source.level,
+        affixSummary = source.affixSummary,
+        elapsedSeconds = completionElapsedSeconds,
+        maxTimeSeconds = completionMaxTimeSeconds,
+        timeLeftSeconds = completionTimeLeftSeconds,
+        twoChestLimit = source.twoChestLimit,
+        threeChestLimit = source.threeChestLimit,
+        deathCount = source.deathCount,
+        deathPenalty = source.deathPenalty,
+        deathLog = CopyDeathLog(ui.deathLog),
+        resultText = resultText,
     }
 end
 
@@ -823,7 +1466,7 @@ local function ApplyMythicFrameSettings()
     ui.frame:ClearAllPoints()
     ui.frame:SetPoint(pointData[1] or "CENTER", relativeFrame, pointData[3] or "CENTER", pointData[4] or 0, pointData[5] or 0)
     ui.frame:SetScale(settings.scale or 1)
-    ui.frame:EnableMouse(not settings.locked)
+    ui.frame:EnableMouse(true)
     if not settings.locked then
         ui.dragLabel:SetText("KeyMaster (drag to move)")
     else
@@ -869,8 +1512,14 @@ local function EnsureHiddenTrackerFrame()
 end
 
 local function UpdateBlizzardTrackerVisibility(shouldSuppress)
+    local suppress = shouldSuppress == true
+
+    if ui.trackerSuppressed == suppress then
+        return
+    end
+
     if not ObjectiveTrackerFrame then
-        ui.trackerSuppressed = false
+        ui.trackerSuppressed = suppress
         return
     end
 
@@ -878,30 +1527,50 @@ local function UpdateBlizzardTrackerVisibility(shouldSuppress)
         return
     end
 
-    if UnitAffectingCombat and UnitAffectingCombat("player") then
-        return
+    local alpha = suppress and 0 or 1
+    ObjectiveTrackerFrame:SetAlpha(alpha)
+    if ObjectiveTrackerBlocksFrame and ObjectiveTrackerBlocksFrame.SetAlpha then
+        ObjectiveTrackerBlocksFrame:SetAlpha(alpha)
     end
 
-    if shouldSuppress then
-        local hiddenTrackerFrame = EnsureHiddenTrackerFrame()
-        if ObjectiveTrackerFrame:GetParent() ~= hiddenTrackerFrame then
-            ObjectiveTrackerFrame:SetParent(hiddenTrackerFrame)
-        end
-        hiddenTrackerFrame:Hide()
-        ui.trackerSuppressed = true
-        return
-    end
-
-    if ObjectiveTrackerFrame:GetParent() ~= UIParent then
-        ObjectiveTrackerFrame:SetParent(UIParent)
-    end
-
-    ui.trackerSuppressed = false
+    ui.trackerSuppressed = suppress
 end
 
 local function SetMythicFrameLocked(isLocked)
     InitializeDatabase().ui.locked = isLocked == true
     ApplyMythicFrameSettings()
+end
+
+local function BuildUIStatusLine()
+    local uiSettings = InitializeDatabase().ui
+    local point = uiSettings.point or DEFAULT_DB.ui.point
+    local anchor = string.format("%s/%s", point[1] or "CENTER", point[3] or "CENTER")
+    local offset = string.format("%d,%d", point[4] or 0, point[5] or 0)
+    local challengeActive = IsChallengeModeRunActive()
+
+    return string.format(
+        "UI status - enabled: %s, hidden: %s, tracker hide in M+: %s, locked: %s, scale: %.2f, M+ detected: %s, anchor: %s (%s)",
+        uiSettings.enabled and "on" or "off",
+        uiSettings.hidden and "yes" or "no",
+        uiSettings.hideTrackerInMythicPlus and "on" or "off",
+        uiSettings.locked and "yes" or "no",
+        uiSettings.scale or 1,
+        challengeActive and "yes" or "no",
+        anchor,
+        offset
+    )
+end
+
+local function RestoreUIStateToVisibleDefaults()
+    local uiSettings = InitializeDatabase().ui
+    uiSettings.enabled = true
+    uiSettings.hidden = false
+    uiSettings.locked = true
+    uiSettings.scale = DEFAULT_DB.ui.scale
+    uiSettings.point = CopyDefaults(DEFAULT_DB.ui.point, {})
+
+    ApplyMythicFrameSettings()
+    RefreshMythicUI()
 end
 
 local function RegisterSettingsPanel()
@@ -941,8 +1610,18 @@ local function RegisterSettingsPanel()
     description:SetJustifyH("LEFT")
     description:SetText("Disabled: KeyMaster keeps chat replies and Font of Power auto-slotting, but Blizzard's default Mythic+ UI remains active.")
 
+    local trackerCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    trackerCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", -2, -12)
+    trackerCheckbox.Text:SetText("Hide Blizzard objectives during Mythic+")
+    trackerCheckbox.Text:SetWidth(320)
+    trackerCheckbox:SetChecked(InitializeDatabase().ui.hideTrackerInMythicPlus ~= false)
+    trackerCheckbox:SetScript("OnClick", function(self)
+        InitializeDatabase().ui.hideTrackerInMythicPlus = self:GetChecked() == true
+        RefreshMythicUI()
+    end)
+
     local positioning = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    positioning:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -14)
+    positioning:SetPoint("TOPLEFT", trackerCheckbox, "BOTTOMLEFT", 6, -10)
     positioning:SetWidth(560)
     positioning:SetJustifyH("LEFT")
     positioning:SetText("To position the overlay: use /km unlock, drag the frame where you want it, then use /km lock.")
@@ -967,6 +1646,7 @@ local function RegisterSettingsPanel()
 
     panel:SetScript("OnShow", function()
         checkbox:SetChecked(IsMythicUIEnabled())
+        trackerCheckbox:SetChecked(InitializeDatabase().ui.hideTrackerInMythicPlus ~= false)
         unlockButton:SetEnabled(IsMythicUIEnabled())
         lockButton:SetEnabled(IsMythicUIEnabled())
     end)
@@ -989,6 +1669,260 @@ local function EnsureObjectiveLine(index)
 
     ui.objectiveLines[index] = CreateLine(ui.frame, 12)
     return ui.objectiveLines[index]
+end
+
+local function RenderMythicUI()
+    if not ui.frame then
+        return
+    end
+
+    local settings = InitializeDatabase().ui
+    local challengeActive = IsChallengeModeRunActive()
+    local shouldSuppressTracker = settings.enabled
+        and not settings.hidden
+        and challengeActive
+        and (settings.hideTrackerInMythicPlus ~= false)
+
+    if not settings.enabled then
+        ui.frame:Hide()
+    elseif settings.hidden then
+        ui.frame:Hide()
+    else
+        local state = challengeActive and GetActiveRunState() or nil
+        if state then
+            ui.lastRunState = state
+            local width = 288
+            local xPadding = 10
+            local y = -10
+
+            ui.frame:Show()
+
+            ui.dragLabel:ClearAllPoints()
+            ui.dragLabel:SetPoint("TOPRIGHT", ui.frame, "TOPRIGHT", -10, -8)
+
+            ui.headerLine:SetText(state.level and string.format("+%d - %s", state.level, state.mapName) or state.mapName)
+            ui.headerLine:SetWidth(width)
+            ui.headerLine:ClearAllPoints()
+            ui.headerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.headerLine:GetStringHeight() - 4
+
+            if state.affixSummary and state.affixSummary ~= "" then
+                ui.affixesLine:SetText(state.affixSummary)
+                ui.affixesLine:SetWidth(width)
+                ui.affixesLine:ClearAllPoints()
+                ui.affixesLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+                ui.affixesLine:Show()
+                y = y - ui.affixesLine:GetStringHeight() - 6
+            else
+                ui.affixesLine:Hide()
+            end
+
+            if state.maxTimeSeconds then
+                ui.timerLine:SetText(string.format("%s (%s / %s)", FormatSeconds(state.timeLeftSeconds), FormatSeconds(state.elapsedSeconds), FormatSeconds(state.maxTimeSeconds)))
+            else
+                ui.timerLine:SetText(FormatSeconds(state.elapsedSeconds))
+            end
+            ui.timerLine:SetWidth(width)
+            ui.timerLine:ClearAllPoints()
+            ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.timerLine:GetStringHeight() - 4
+
+            if state.twoChestLimit then
+                ui.twoChestLine:SetText(string.format("+2 (%s): %s", FormatSeconds(state.twoChestLimit), FormatSeconds(max(0, state.twoChestLimit - state.elapsedSeconds))))
+            else
+                ui.twoChestLine:SetText("+2: --:--")
+            end
+            ui.twoChestLine:SetWidth(width)
+            ui.twoChestLine:ClearAllPoints()
+            ui.twoChestLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.twoChestLine:GetStringHeight() - 4
+
+            if state.threeChestLimit then
+                ui.threeChestLine:SetText(string.format("+3 (%s): %s", FormatSeconds(state.threeChestLimit), FormatSeconds(max(0, state.threeChestLimit - state.elapsedSeconds))))
+            else
+                ui.threeChestLine:SetText("+3: --:--")
+            end
+            ui.threeChestLine:SetWidth(width)
+            ui.threeChestLine:ClearAllPoints()
+            ui.threeChestLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.threeChestLine:GetStringHeight() - 8
+
+            local visibleObjectiveCount = 0
+            for index, objective in ipairs(state.objectives) do
+                local line = EnsureObjectiveLine(index)
+                line:SetText(BuildObjectiveText(objective))
+                line:SetWidth(width)
+                line:ClearAllPoints()
+                line:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+                line:Show()
+                y = y - line:GetStringHeight() - 4
+                visibleObjectiveCount = index
+            end
+
+            for index = visibleObjectiveCount + 1, #ui.objectiveLines do
+                ui.objectiveLines[index]:Hide()
+            end
+
+            local enemyPercent = CalculateEnemyForcesPercent(state.enemyForcesPercent)
+            if type(enemyPercent) == "number" then
+                local barValue = max(0, min(1, enemyPercent / 100))
+                local displayEnemyPercent = min(100, max(0, floor(enemyPercent + 0.000001)))
+
+                ui.enemyBar:ClearAllPoints()
+                ui.enemyBar:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+                ui.enemyBar:SetPoint("TOPRIGHT", ui.frame, "TOPRIGHT", -xPadding, y)
+                ui.enemyBar:SetHeight(20)
+                ui.enemyBar:Show()
+                ui.enemyBar.status:SetValue(barValue)
+                ui.enemyBar.text:SetText(string.format("Enemy Forces %d%%", displayEnemyPercent))
+                ui.enemyBar.text:SetPoint("CENTER", ui.enemyBar, "CENTER", 0, 0)
+                ui.enemyBar.text:SetTextColor(1, 1, 1, 1)
+                ui.enemyBar.text:SetShadowColor(0, 0, 0, 0.9)
+                ui.enemyBar.text:SetShadowOffset(1, -1)
+
+                if barValue > 0 and barValue < 1 then
+                    ui.enemyBar.edge:ClearAllPoints()
+                    ui.enemyBar.edge:SetPoint("CENTER", ui.enemyBar.status, "LEFT", ui.enemyBar.status:GetWidth() * barValue, 0)
+                    ui.enemyBar.edge:SetHeight(ui.enemyBar:GetHeight() + 10)
+                    ui.enemyBar.edge:Show()
+                else
+                    ui.enemyBar.edge:Hide()
+                end
+
+                y = y - 26
+            else
+                ui.enemyBar:Hide()
+            end
+
+            if state.deathCount and state.deathCount > 0 then
+                ui.deathLine:SetText(string.format("Deaths: %d (-%s)", state.deathCount, FormatSeconds(state.deathPenalty or 0)))
+                ui.deathLine:SetWidth(width)
+                ui.deathLine:ClearAllPoints()
+                ui.deathLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+                ui.deathLine:Show()
+                UpdateDeathTooltipArea()
+                y = y - ui.deathLine:GetStringHeight() - 4
+            else
+                ui.deathLine:Hide()
+                UpdateDeathTooltipArea()
+            end
+
+            ui.frame:SetHeight(max(120, -y + 12))
+        elseif challengeActive then
+            local width = 288
+            local xPadding = 10
+            local y = -10
+
+            ui.frame:Show()
+
+            ui.dragLabel:ClearAllPoints()
+            ui.dragLabel:SetPoint("TOPRIGHT", ui.frame, "TOPRIGHT", -10, -8)
+
+            ui.headerLine:SetText("Mythic+ active")
+            ui.headerLine:SetWidth(width)
+            ui.headerLine:ClearAllPoints()
+            ui.headerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.headerLine:GetStringHeight() - 4
+
+            local elapsedSeconds = GetWorldElapsedSeconds() or 0
+            ui.timerLine:SetText(string.format("%s (waiting for challenge data)", FormatSeconds(elapsedSeconds)))
+            ui.timerLine:SetWidth(width)
+            ui.timerLine:ClearAllPoints()
+            ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+
+            ui.affixesLine:Hide()
+            ui.twoChestLine:Hide()
+            ui.threeChestLine:Hide()
+            ui.deathLine:Hide()
+            UpdateDeathTooltipArea()
+            ui.enemyBar:Hide()
+            for index = 1, #ui.objectiveLines do
+                ui.objectiveLines[index]:Hide()
+            end
+
+            ui.frame:SetHeight(90)
+        elseif ui.completedRun and IsInMythicDungeonInstance() then
+            local completed = ui.completedRun
+            local width = 288
+            local xPadding = 10
+            local y = -10
+
+            ui.frame:Show()
+
+            ui.dragLabel:ClearAllPoints()
+            ui.dragLabel:SetPoint("TOPRIGHT", ui.frame, "TOPRIGHT", -10, -8)
+
+            ui.headerLine:SetText(completed.level and string.format("+%d - %s", completed.level, completed.mapName or "Mythic+") or (completed.mapName or "Mythic+"))
+            ui.headerLine:SetWidth(width)
+            ui.headerLine:ClearAllPoints()
+            ui.headerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.headerLine:GetStringHeight() - 4
+
+            if completed.affixSummary and completed.affixSummary ~= "" then
+                ui.affixesLine:SetText(completed.affixSummary)
+                ui.affixesLine:SetWidth(width)
+                ui.affixesLine:ClearAllPoints()
+                ui.affixesLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+                ui.affixesLine:Show()
+                y = y - ui.affixesLine:GetStringHeight() - 6
+            else
+                ui.affixesLine:Hide()
+            end
+
+            if completed.maxTimeSeconds then
+                ui.timerLine:SetText(string.format("Completed: %s (%s left)", FormatSeconds(completed.elapsedSeconds or 0), FormatSeconds(max(0, completed.timeLeftSeconds or 0))))
+            else
+                ui.timerLine:SetText(string.format("Completed: %s", FormatSeconds(completed.elapsedSeconds or 0)))
+            end
+            ui.timerLine:SetWidth(width)
+            ui.timerLine:ClearAllPoints()
+            ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            y = y - ui.timerLine:GetStringHeight() - 4
+
+            ui.twoChestLine:SetText(completed.resultText or "Result: Completed")
+            ui.twoChestLine:SetWidth(width)
+            ui.twoChestLine:ClearAllPoints()
+            ui.twoChestLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            ui.twoChestLine:Show()
+            y = y - ui.twoChestLine:GetStringHeight() - 4
+
+            if completed.maxTimeSeconds then
+                ui.threeChestLine:SetText(string.format("Timer: %s / %s", FormatSeconds(completed.elapsedSeconds or 0), FormatSeconds(completed.maxTimeSeconds)))
+            else
+                ui.threeChestLine:SetText("Timer: --:--")
+            end
+            ui.threeChestLine:SetWidth(width)
+            ui.threeChestLine:ClearAllPoints()
+            ui.threeChestLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+            ui.threeChestLine:Show()
+            y = y - ui.threeChestLine:GetStringHeight() - 6
+
+            if completed.deathCount and completed.deathCount > 0 then
+                ui.deathLine:SetText(string.format("Deaths: %d (-%s)", completed.deathCount, FormatSeconds(completed.deathPenalty or 0)))
+                ui.deathLine:SetWidth(width)
+                ui.deathLine:ClearAllPoints()
+                ui.deathLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
+                ui.deathLine:Show()
+                UpdateDeathTooltipArea()
+                y = y - ui.deathLine:GetStringHeight() - 4
+            else
+                ui.deathLine:Hide()
+                UpdateDeathTooltipArea()
+            end
+
+            ui.enemyBar:Hide()
+            for index = 1, #ui.objectiveLines do
+                ui.objectiveLines[index]:Hide()
+            end
+
+            ui.frame:SetHeight(max(120, -y + 12))
+        else
+            ui.frame:Hide()
+            UpdateDeathTooltipArea()
+        end
+    end
+
+    UpdateBlizzardTrackerVisibility(shouldSuppressTracker)
 end
 
 local function CreateMythicUI()
@@ -1040,6 +1974,17 @@ local function CreateMythicUI()
     ui.threeChestLine = CreateLine(mythicFrame, 12)
     ui.deathLine = CreateLine(mythicFrame, 12)
 
+    local deathHitArea = CreateFrame("Frame", nil, mythicFrame)
+    deathHitArea:EnableMouse(true)
+    deathHitArea:SetFrameStrata(mythicFrame:GetFrameStrata())
+    deathHitArea:SetFrameLevel(mythicFrame:GetFrameLevel() + 20)
+    deathHitArea:Hide()
+    deathHitArea:SetScript("OnEnter", function(self)
+        ShowDeathTooltip(self)
+    end)
+    deathHitArea:SetScript("OnLeave", GameTooltip_Hide)
+    ui.deathHitArea = deathHitArea
+
     ui.dragLabel = CreateLine(mythicFrame, 11)
     ui.dragLabel:SetText("KeyMaster")
     ui.dragLabel:SetTextColor(1, 1, 1, 0.85)
@@ -1077,6 +2022,12 @@ local function CreateMythicUI()
     enemyBar.edge:SetWidth(2)
     enemyBar.edge:Hide()
 
+    enemyBar.labelBackdrop = enemyBar:CreateTexture(nil, "ARTWORK")
+    enemyBar.labelBackdrop:SetTexture("Interface\\Buttons\\WHITE8x8")
+    enemyBar.labelBackdrop:SetPoint("TOPLEFT", enemyBar, "TOPLEFT", 2, -2)
+    enemyBar.labelBackdrop:SetPoint("BOTTOMRIGHT", enemyBar, "BOTTOMRIGHT", -2, 2)
+    enemyBar.labelBackdrop:SetColorTexture(0, 0, 0, 0.25)
+
     enemyBar.text = CreateLine(enemyBar, 12)
     enemyBar.text:SetJustifyH("CENTER")
 
@@ -1089,147 +2040,7 @@ local function CreateMythicUI()
         end
 
         ui.lastRefreshAt = 0
-        if ui.frame and ui.frame:IsShown() then
-            local state = GetActiveRunState()
-            if state then
-                local forceRefresh = true
-                if forceRefresh then
-                    -- fall through to the shared refresh routine below
-                end
-            end
-        end
-
-        -- Reuse the main event-driven renderer during polling.
-        -- This keeps the timer and enemy forces bar live while inside a run.
-        if ui.frame then
-            local settings = InitializeDatabase().ui
-            if not settings.enabled then
-                ui.frame:Hide()
-                UpdateBlizzardTrackerVisibility(false)
-            elseif settings.hidden then
-                ui.frame:Hide()
-                UpdateBlizzardTrackerVisibility(false)
-            else
-                local state = GetActiveRunState()
-                if state then
-                    local width = 288
-                    local xPadding = 10
-                    local y = -10
-
-                    ui.frame:Show()
-
-                    ui.dragLabel:ClearAllPoints()
-                    ui.dragLabel:SetPoint("TOPRIGHT", ui.frame, "TOPRIGHT", -10, -8)
-
-                    ui.headerLine:SetText(state.level and string.format("+%d - %s", state.level, state.mapName) or state.mapName)
-                    ui.headerLine:SetWidth(width)
-                    ui.headerLine:ClearAllPoints()
-                    ui.headerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                    y = y - ui.headerLine:GetStringHeight() - 4
-
-                    if state.affixSummary and state.affixSummary ~= "" then
-                        ui.affixesLine:SetText(state.affixSummary)
-                        ui.affixesLine:SetWidth(width)
-                        ui.affixesLine:ClearAllPoints()
-                        ui.affixesLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                        ui.affixesLine:Show()
-                        y = y - ui.affixesLine:GetStringHeight() - 6
-                    else
-                        ui.affixesLine:Hide()
-                    end
-
-                    if state.maxTimeSeconds then
-                        ui.timerLine:SetText(string.format("%s (%s / %s)", FormatSeconds(state.timeLeftSeconds), FormatSeconds(state.elapsedSeconds), FormatSeconds(state.maxTimeSeconds)))
-                    else
-                        ui.timerLine:SetText(FormatSeconds(state.elapsedSeconds))
-                    end
-                    ui.timerLine:SetWidth(width)
-                    ui.timerLine:ClearAllPoints()
-                    ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                    y = y - ui.timerLine:GetStringHeight() - 4
-
-                    if state.twoChestLimit then
-                        ui.twoChestLine:SetText(string.format("+2 (%s): %s", FormatSeconds(state.twoChestLimit), FormatSeconds(max(0, state.twoChestLimit - state.elapsedSeconds))))
-                    else
-                        ui.twoChestLine:SetText("+2: --:--")
-                    end
-                    ui.twoChestLine:SetWidth(width)
-                    ui.twoChestLine:ClearAllPoints()
-                    ui.twoChestLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                    y = y - ui.twoChestLine:GetStringHeight() - 4
-
-                    if state.threeChestLimit then
-                        ui.threeChestLine:SetText(string.format("+3 (%s): %s", FormatSeconds(state.threeChestLimit), FormatSeconds(max(0, state.threeChestLimit - state.elapsedSeconds))))
-                    else
-                        ui.threeChestLine:SetText("+3: --:--")
-                    end
-                    ui.threeChestLine:SetWidth(width)
-                    ui.threeChestLine:ClearAllPoints()
-                    ui.threeChestLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                    y = y - ui.threeChestLine:GetStringHeight() - 8
-
-                    local visibleObjectiveCount = 0
-                    for index, objective in ipairs(state.objectives) do
-                        local line = EnsureObjectiveLine(index)
-                        line:SetText(BuildObjectiveText(objective))
-                        line:SetWidth(width)
-                        line:ClearAllPoints()
-                        line:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                        line:Show()
-                        y = y - line:GetStringHeight() - 4
-                        visibleObjectiveCount = index
-                    end
-
-                    for index = visibleObjectiveCount + 1, #ui.objectiveLines do
-                        ui.objectiveLines[index]:Hide()
-                    end
-
-                    local enemyPercent = CalculateEnemyForcesPercent(state.enemyForces)
-                    if state.enemyForces and type(enemyPercent) == "number" then
-                        local barValue = max(0, min(1, enemyPercent / 100))
-
-                        ui.enemyBar:ClearAllPoints()
-                        ui.enemyBar:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                        ui.enemyBar:SetPoint("TOPRIGHT", ui.frame, "TOPRIGHT", -xPadding, y)
-                        ui.enemyBar:SetHeight(20)
-                        ui.enemyBar:Show()
-                        ui.enemyBar.status:SetValue(barValue)
-                        ui.enemyBar.text:SetText(string.format("Enemy Forces %.0f%%", enemyPercent))
-                        ui.enemyBar.text:SetPoint("CENTER", ui.enemyBar, "CENTER", 0, 0)
-
-                        if barValue > 0 and barValue < 1 then
-                            ui.enemyBar.edge:ClearAllPoints()
-                            ui.enemyBar.edge:SetPoint("CENTER", ui.enemyBar.status, "LEFT", ui.enemyBar.status:GetWidth() * barValue, 0)
-                            ui.enemyBar.edge:SetHeight(ui.enemyBar:GetHeight() + 10)
-                            ui.enemyBar.edge:Show()
-                        else
-                            ui.enemyBar.edge:Hide()
-                        end
-
-                        y = y - 26
-                    else
-                        ui.enemyBar:Hide()
-                    end
-
-                    if state.deathCount and state.deathCount > 0 then
-                        ui.deathLine:SetText(string.format("Deaths: %d (-%s)", state.deathCount, FormatSeconds(state.deathPenalty or 0)))
-                        ui.deathLine:SetWidth(width)
-                        ui.deathLine:ClearAllPoints()
-                        ui.deathLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
-                        ui.deathLine:Show()
-                        y = y - ui.deathLine:GetStringHeight() - 4
-                    else
-                        ui.deathLine:Hide()
-                    end
-
-                    ui.frame:SetHeight(max(120, -y + 12))
-                    UpdateBlizzardTrackerVisibility(true)
-                else
-                    ui.frame:Hide()
-                    UpdateBlizzardTrackerVisibility(false)
-                end
-            end
-        end
+        RenderMythicUI()
     end)
 
     ApplyMythicFrameSettings()
@@ -1241,37 +2052,13 @@ local function RefreshMythicUI()
     end
 
     ui.lastRefreshAt = UI_REFRESH_INTERVAL_SECONDS
+    RenderMythicUI()
 end
 
 local function TryAutoSlotKeystone()
-    if not (C_ChallengeMode and C_ChallengeMode.SlotKeystone) then
-        return
-    end
-
-    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID and C_Container.PickupContainerItem) then
-        return
-    end
-
-    local ownedMapID = GetOwnedKeystoneMapID()
-    local activeMapID = C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID()
-    if ownedMapID and activeMapID and activeMapID > 0 and ownedMapID ~= activeMapID then
-        ShowMismatchToast(ownedMapID, activeMapID)
-        return
-    end
-
-    for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
-        local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
-        for slotIndex = 1, slotCount do
-            local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
-            if KEYSTONE_ITEM_IDS[itemID] then
-                C_Container.PickupContainerItem(bagID, slotIndex)
-                if CursorHasItem() then
-                    C_ChallengeMode.SlotKeystone()
-                end
-                return
-            end
-        end
-    end
+    -- Disabled: automatic keystone slotting can taint protected Blizzard UI flows.
+    -- Players can still slot the key manually without KeyMaster causing blocked-action popups.
+    return
 end
 
 local function HookChallengesFrame()
@@ -1283,6 +2070,65 @@ local function HookChallengesFrame()
     ui.challengesFrameHooked = true
 end
 
+local function PrintEnemyForcesDebugSummary()
+    local activeMapID
+    if C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID then
+        local ok, mapID = pcall(C_ChallengeMode.GetActiveChallengeMapID)
+        if ok and type(mapID) == "number" and mapID > 0 then
+            activeMapID = mapID
+        end
+    end
+
+    local mapName = GetKeystoneMapName(activeMapID)
+    if (not mapName or mapName == "") and activeMapID then
+        mapName = FormatDungeonLabel(activeMapID)
+    end
+
+    local knownTotal = GetKnownEnemyForcesTotalUnits(activeMapID, mapName)
+    PrintLocal(string.format(
+        "Enemy Forces debug: mapID=%s map=%s knownTotal=%s cachedTotal=%s",
+        tostring(activeMapID or "?"),
+        tostring(mapName or "?"),
+        tostring(knownTotal or "nil"),
+        tostring(ui.enemyForcesTotalUnits or "nil")
+    ))
+
+    local criteriaCount = GetCriteriaCount()
+    if criteriaCount <= 0 then
+        PrintLocal("Enemy Forces debug: no criteria available")
+        return
+    end
+
+    local found = false
+    for index = 1, criteriaCount do
+        local info = NormalizeCriteriaInfo(index)
+        if info and IsEnemyForcesName(info.name) then
+            found = true
+            local parsedPercent = ParsePercentValue(info.quantityString)
+            local inferredTotal
+            if type(info.quantity) == "number" and info.quantity > 0 and type(parsedPercent) == "number" and parsedPercent > 0 then
+                inferredTotal = (info.quantity * 100) / parsedPercent
+            end
+
+            PrintLocal(string.format(
+                "Enemy criteria[%d]: quantity=%s totalQuantity=%s qstr=%s parsed%%=%s inferredTotal=%s weighted=%s completed=%s",
+                index,
+                tostring(info.quantity),
+                tostring(info.totalQuantity),
+                tostring(info.quantityString),
+                tostring(parsedPercent),
+                tostring(inferredTotal and floor(inferredTotal + 0.5) or "nil"),
+                info.isWeightedProgress and "yes" or "no",
+                info.completed and "yes" or "no"
+            ))
+        end
+    end
+
+    if not found then
+        PrintLocal("Enemy Forces debug: no Enemy Forces criterion matched")
+    end
+end
+
 SLASH_KEYMASTER1 = "/keymaster"
 SLASH_KEYMASTER2 = "/km"
 SlashCmdList.KEYMASTER = function(message)
@@ -1292,7 +2138,37 @@ SlashCmdList.KEYMASTER = function(message)
 
     local command = strtrim(strlower(message or ""))
     if command == "" then
-        PrintLocal("loaded. UI commands: settings, ui on, ui off, lock, unlock, hide, show, reset, scale <value>. Unlock the UI, then drag it where you want it.")
+        PrintLocal(BuildUIStatusLine())
+        PrintLocal("UI commands: settings, status, ui on, ui off, ui restore, lock, unlock, hide, show, reset, scale <value>. Unlock the UI, then drag it where you want it.")
+        return
+    end
+
+    if command == "status" then
+        PrintLocal(BuildUIStatusLine())
+        return
+    end
+
+    if command == "deaths" then
+        local ok, err = pcall(PrintDeathLogSummary)
+        if not ok then
+            PrintLocal(string.format("deaths debug error: %s", tostring(err)))
+        end
+        return
+    end
+
+    if command == "criteria" then
+        local ok, err = pcall(PrintCriteriaDebugSummary)
+        if not ok then
+            PrintLocal(string.format("criteria debug error: %s", tostring(err)))
+        end
+        return
+    end
+
+    if command == "forces" then
+        local ok, err = pcall(PrintEnemyForcesDebugSummary)
+        if not ok then
+            PrintLocal(string.format("forces debug error: %s", tostring(err)))
+        end
         return
     end
 
@@ -1314,6 +2190,12 @@ SlashCmdList.KEYMASTER = function(message)
     if command == "ui off" then
         SetMythicUIEnabled(false)
         PrintLocal("KeyMaster Mythic+ UI disabled; Blizzard UI restored")
+        return
+    end
+
+    if command == "ui restore" then
+        RestoreUIStateToVisibleDefaults()
+        PrintLocal("KeyMaster Mythic+ UI restored and reset to the default top-right location")
         return
     end
 
@@ -1366,7 +2248,7 @@ SlashCmdList.KEYMASTER = function(message)
         return
     end
 
-    PrintLocal("unknown command. Use: settings, ui on, ui off, lock, unlock, hide, show, reset, scale <value>")
+    PrintLocal("unknown command. Use: settings, status, deaths, criteria, forces, ui on, ui off, ui restore, lock, unlock, hide, show, reset, scale <value>")
 end
 
 frame:RegisterEvent("ADDON_LOADED")
@@ -1376,9 +2258,17 @@ frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("CHALLENGE_MODE_START")
 frame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 frame:RegisterEvent("CHALLENGE_MODE_RESET")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 frame:RegisterEvent("SCENARIO_CRITERIA_UPDATE")
+frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+frame:RegisterEvent("UNIT_FLAGS")
+frame:RegisterEvent("PLAYER_DEAD")
 frame:RegisterEvent("CHAT_MSG_PARTY")
+frame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
 frame:RegisterEvent("CHAT_MSG_RAID")
+frame:RegisterEvent("CHAT_MSG_RAID_LEADER")
+frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT")
+frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT_LEADER")
 frame:RegisterEvent("CHAT_MSG_GUILD")
 
 frame:SetScript("OnEvent", function(_, event, ...)
@@ -1403,12 +2293,59 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
+    -- Challenge mode event tracking - these fire immediately on entering/leaving M+
+    if event == "CHALLENGE_MODE_START" then
+        ui.inChallengeMode = true
+        ui.completedRun = nil
+        ui.lastRunState = nil
+        ResetDeathLog()
+        ResetEnemyForcesCalibration()
+        SyncGroupDeathLogFromUnits()
+        RefreshMythicUI()
+        return
+    end
+
+    if event == "CHALLENGE_MODE_COMPLETED" then
+        SyncGroupDeathLogFromUnits()
+        CaptureCompletedRunState()
+        ui.inChallengeMode = false
+        RefreshMythicUI()
+        return
+    end
+
+    if event == "CHALLENGE_MODE_RESET" then
+        ui.inChallengeMode = false
+        ui.lastRunState = nil
+        ui.completedRun = nil
+        ResetDeathLog()
+        ResetEnemyForcesCalibration()
+        RefreshMythicUI()
+        return
+    end
+
+    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        local _, subEvent, _, _, _, _, _, destGUID, destName, destFlags = CombatLogGetCurrentEventInfo()
+        if subEvent == "UNIT_DIED" then
+            RecordGroupDeath(destGUID, destName, destFlags)
+        end
+        return
+    end
+
+    if event == "GROUP_ROSTER_UPDATE" or event == "UNIT_FLAGS" or event == "PLAYER_DEAD" then
+        SyncGroupDeathLogFromUnits()
+        return
+    end
+
     if event == "PLAYER_ENTERING_WORLD"
         or event == "PLAYER_REGEN_ENABLED"
-        or event == "CHALLENGE_MODE_START"
-        or event == "CHALLENGE_MODE_COMPLETED"
-        or event == "CHALLENGE_MODE_RESET"
         or event == "SCENARIO_CRITERIA_UPDATE" then
+        if event == "PLAYER_ENTERING_WORLD" and not IsInMythicDungeonInstance() then
+            ui.completedRun = nil
+            ui.lastRunState = nil
+            ui.inChallengeMode = false
+            ResetEnemyForcesCalibration()
+        end
+        SyncGroupDeathLogFromUnits()
         RefreshMythicUI()
         return
     end
