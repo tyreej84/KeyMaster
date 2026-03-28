@@ -5,10 +5,11 @@ A Mythic+ utility addon for World of Warcraft with chat replies and a live dunge
 ## What it does
 
 - Type `!key` or `!keys` in party, raid, instance, or guild chat to share your clickable Mythic+ keystone link.
+- Announces your new keystone to party chat when your key changes after a run.
 - Type `!score` to share your current Mythic+ score.
 - Type `!best` to share your best Mythic+ run for the current week and season.
 - Shows a live Mythic+ overlay with dungeon header, affixes, timer, chest breakpoints, objectives, deaths, and Enemy Forces.
-- Uses a transparent black panel with white text and a blue Enemy Forces progress bar inspired by BreakTimerLite.
+- Uses a transparent black panel with white text and a blue Enemy Forces progress bar.
 
 ## Commands
 

@@ -48,6 +48,7 @@ local ui = {
     completedRun = nil,
     deathLog = {},
     deadUnitState = {},
+    observedKeystoneSnapshot = nil,
     enemyForcesTotalUnits = nil,
     enemyForcesMapID = nil,
 }
@@ -692,6 +693,96 @@ local function BuildKeystoneReply()
     end
 
     return string.format("%s Keystone unavailable", REPLY_PREFIX)
+end
+
+local function GetOwnedKeystoneSnapshot()
+    local mapID = GetOwnedKeystoneMapID()
+    local keyLevel = GetOwnedKeystoneLevel()
+
+    if type(mapID) ~= "number" or mapID <= 0 or type(keyLevel) ~= "number" or keyLevel <= 0 then
+        return nil, nil
+    end
+
+    return mapID, keyLevel
+end
+
+local function BuildKeystoneSnapshotKey(mapID, keyLevel)
+    if type(mapID) ~= "number" or type(keyLevel) ~= "number" then
+        return "none"
+    end
+
+    return string.format("%d:%d", mapID, keyLevel)
+end
+
+local function AnnounceNewOwnedKeystone(mapID, keyLevel)
+    if not IsInGroup() then
+        return
+    end
+
+    local link = GetOwnedKeystoneLink()
+    if not link and mapID and keyLevel then
+        local mapName = GetKeystoneMapName(mapID)
+        if mapName and mapName ~= "" then
+            local linkText = string.format("[Keystone: %s (%d)]", mapName, keyLevel)
+            link = string.format(
+                "|cffa335ee|Hkeystone:%d:%d:%d:%d:%d:%d:%d:%d|h%s|h|r",
+                180653,
+                mapID,
+                keyLevel,
+                0,
+                0,
+                0,
+                0,
+                0,
+                linkText
+            )
+        end
+    end
+
+    if not link then
+        return
+    end
+
+    pcall(SendChatMessage, string.format("%s New key %s", REPLY_PREFIX, link), "PARTY")
+end
+
+local function ObserveOwnedKeystone(allowAnnounce)
+    local mapID, keyLevel = GetOwnedKeystoneSnapshot()
+    local currentSnapshotKey = BuildKeystoneSnapshotKey(mapID, keyLevel)
+
+    if not ui.observedKeystoneSnapshot then
+        ui.observedKeystoneSnapshot = currentSnapshotKey
+        return
+    end
+
+    if ui.observedKeystoneSnapshot == currentSnapshotKey then
+        return
+    end
+
+    local previousSnapshotKey = ui.observedKeystoneSnapshot
+    ui.observedKeystoneSnapshot = currentSnapshotKey
+
+    if allowAnnounce ~= true then
+        return
+    end
+
+    if previousSnapshotKey == "none" or currentSnapshotKey == "none" then
+        return
+    end
+
+    AnnounceNewOwnedKeystone(mapID, keyLevel)
+end
+
+local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
+    if not (C_Timer and C_Timer.After) then
+        ObserveOwnedKeystone(allowAnnounce)
+        return
+    end
+
+    local delay = type(delaySeconds) == "number" and max(0, delaySeconds) or 0
+    C_Timer.After(delay, function()
+        ObserveOwnedKeystone(allowAnnounce)
+    end)
 end
 
 local function GetMythicPlusScore()
@@ -2289,6 +2380,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
             HookChallengesFrame()
         end
+        ObserveOwnedKeystone(false)
         RefreshMythicUI()
         return
     end
@@ -2300,6 +2392,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         ui.lastRunState = nil
         ResetDeathLog()
         ResetEnemyForcesCalibration()
+        ObserveOwnedKeystone(false)
         SyncGroupDeathLogFromUnits()
         RefreshMythicUI()
         return
@@ -2309,6 +2402,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
         SyncGroupDeathLogFromUnits()
         CaptureCompletedRunState()
         ui.inChallengeMode = false
+        -- Match AstralKeys behavior: check shortly after completion so the rerolled key can be observed.
+        ScheduleOwnedKeystoneObservation(true, 3)
         RefreshMythicUI()
         return
     end
@@ -2319,6 +2414,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         ui.completedRun = nil
         ResetDeathLog()
         ResetEnemyForcesCalibration()
+        ScheduleOwnedKeystoneObservation(true, 1)
         RefreshMythicUI()
         return
     end
@@ -2344,6 +2440,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
             ui.lastRunState = nil
             ui.inChallengeMode = false
             ResetEnemyForcesCalibration()
+        end
+        if event == "PLAYER_ENTERING_WORLD" then
+            ScheduleOwnedKeystoneObservation(false, 1)
         end
         SyncGroupDeathLogFromUnits()
         RefreshMythicUI()

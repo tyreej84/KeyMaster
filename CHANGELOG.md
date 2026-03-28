@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.9] - 2026-03-28
+
+### Added
+- Added automatic new-key announcements to party chat when your owned keystone changes after Mythic+ completion/reset.
+- Key-change detection uses a stored keystone snapshot and delayed post-completion checks so rerolled keys are picked up reliably.
+
+### Packaging
+- Built release archive at `Releases/1.4.9/KeyMaster.zip`.
+
 ## [1.4.8] - 2026-03-28
 
 ### Fixed
@@ -124,8 +133,8 @@ All notable changes to this project will be documented in this file.
 ## [1.3.5] - 2026-03-27
 
 ### Fixed
-- Reworked Enemy Forces percent calculation to follow MythicPlusTimer's criteria logic path first.
-- Weighted criteria now prefer MythicPlusTimer-compatible handling of `quantity`, `quantityString`, and `totalQuantity` before custom fallbacks.
+- Reworked Enemy Forces percent calculation to follow the in-game criteria logic path first.
+- Weighted criteria now prioritize direct handling of `quantity`, `quantityString`, and `totalQuantity` before custom fallbacks.
 - Retained dungeon total-unit conversion only as fallback when criteria data is incomplete.
 
 ### Packaging
@@ -181,7 +190,7 @@ All notable changes to this project will be documented in this file.
 ## [1.2.14] - 2026-03-27
 
 ### Fixed
-- Enemy Forces percent resolution now mirrors MythicPlusTimer weighted handling more closely after mid-run reloads.
+- Enemy Forces percent resolution now mirrors the game criteria weighted handling more closely after mid-run reloads.
 - For weighted Enemy Forces criteria, fallback now uses the weighted quantity directly (percent-like) instead of quantity/total conversion.
 - Percent parser now tolerates WoW color formatting and spacing variants like `88 %`, reducing false fallback to bad values.
 
@@ -233,7 +242,7 @@ All notable changes to this project will be documented in this file.
 ## [1.2.9] - 2026-03-26
 
 ### Fixed
-- Tightened Enemy Forces detection to only use weighted-progress scenario criteria, matching the MythicPlusTimer approach more closely.
+- Tightened Enemy Forces detection to only use weighted-progress scenario criteria, matching in-game criteria behavior more closely.
 - This avoids treating unrelated percentage-based objectives as Enemy Forces, which could cause the bar to jump to 100% on an early pull.
 - Improved the deaths hover area and tooltip behavior so hovering the deaths line always gives visible feedback.
 
@@ -249,7 +258,7 @@ All notable changes to this project will be documented in this file.
 - Added a hover tooltip on the deaths line that shows which party members died and how many times.
 
 ### Changed
-- Death tooltip data is tracked from `COMBAT_LOG_EVENT_UNFILTERED`, matching the combat-log-based approach used by MythicPlusTimer.
+- Death tooltip data is tracked from `COMBAT_LOG_EVENT_UNFILTERED`, matching a combat-log-first attribution approach.
 - Death breakdown is preserved briefly on the completed-run summary as well.
 
 ### Packaging
@@ -311,7 +320,7 @@ All notable changes to this project will be documented in this file.
 ## [1.2.2] - 2026-03-26
 
 ### Fixed
-- Fixed M+ overlay not appearing during actual Mythic+ runs by using event-driven detection like MythicPlusTimer.
+- Fixed M+ overlay not appearing during actual Mythic+ runs by using event-driven detection from challenge events.
 - Added `ui.inChallengeMode` flag that is set immediately when `CHALLENGE_MODE_START` event fires, bypassing API initialization delays.
 - Challenge mode detection now has higher priority for event-based signal over API queries.
 - Added "M+ detected: yes/no" output to `/km status` for better diagnostic visibility.
@@ -349,7 +358,7 @@ All notable changes to this project will be documented in this file.
 - Added a KeyMaster settings option to disable the custom Mythic+ UI and fall back to Blizzard's default Mythic+ interface.
 
 ### Changed
-- Styled the Enemy Forces bar with a BreakTimerLite-inspired blue progress fill and centered white percentage text.
+- Styled the Enemy Forces bar with a blue progress fill and centered white percentage text.
 
 ### Packaging
 - Built release archive at `Releases/1.2.0/KeyMaster.zip`.
