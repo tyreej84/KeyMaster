@@ -946,6 +946,7 @@ local function ExtractRequestCommand(message)
     end
 
     command = command:gsub("[,%.%?!;:]+$", "")
+    command = string.format("%s", command)
     if command == KEY_TEXT_COMMAND
         or command == KEYS_TEXT_COMMAND
         or command == SCORE_TEXT_COMMAND
@@ -956,9 +957,8 @@ local function ExtractRequestCommand(message)
     return nil
 end
 
-local function BuildReplyForCommand(message)
-    local command = ExtractRequestCommand(message)
-    if not command then
+local function BuildReplyForCommand(command)
+    if type(command) ~= "string" or command == "" then
         return nil
     end
 

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.3] - 2026-03-29
+
+### Fixed
+- Hardened chat command handling to avoid comparing directly against tainted secret-string message values.
+- Command replies now route through normalized command tokens (`!key`, `!keys`, `!score`, `!best`) for safer comparisons in chat-event handlers.
+
+### Packaging
+- Built release archive at `Releases/1.5.3/KeyMaster.zip`.
+
 ## [1.5.2] - 2026-03-28
 
 ### Fixed
