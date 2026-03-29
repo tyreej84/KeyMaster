@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.6] - 2026-03-29
+
+### Fixed
+- Added `!scores` as an alias for `!score` so both commands return Mythic+ score replies.
+- Improved `!best` run-history parsing to accept numeric-string level/map values and partial run records.
+- Added safe fallback so weekly best uses season best when week-specific API flags are missing but valid season data exists.
+
+### Packaging
+- Built release archive at `Releases/1.5.6/KeyMaster.zip`.
+
 ## [1.5.5] - 2026-03-29
 
 ### Fixed

@@ -20,6 +20,7 @@ local KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.B
 local KEYS_TEXT_COMMAND = "!keys"
 local KEY_TEXT_COMMAND = "!key"
 local SCORE_TEXT_COMMAND = "!score"
+local SCORES_TEXT_COMMAND = "!scores"
 local BEST_TEXT_COMMAND = "!best"
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local UI_REFRESH_INTERVAL_SECONDS = 0.2
@@ -885,11 +886,39 @@ local function GetBestRunsFromHistory()
     local weekBest
     local seasonBest
 
+    local function ResolveRunLevel(run)
+        if type(run) ~= "table" then
+            return nil
+        end
+
+        local level = run.level or run.bestRunLevel or run.keystoneLevel or run.completedLevel
+        level = tonumber(level)
+        if type(level) == "number" and level >= 2 and level <= 40 then
+            return level
+        end
+
+        return nil
+    end
+
+    local function ResolveRunMapID(run)
+        if type(run) ~= "table" then
+            return nil
+        end
+
+        local mapID = run.mapChallengeModeID or run.mapID or run.challengeMapID
+        mapID = tonumber(mapID)
+        if type(mapID) == "number" and mapID > 0 then
+            return mapID
+        end
+
+        return nil
+    end
+
     for _, run in ipairs(history) do
         if run and run.completed ~= false then
-            local level = run.level or run.bestRunLevel or run.keystoneLevel or run.completedLevel
-            local mapID = run.mapChallengeModeID or run.mapID or run.challengeMapID
-            if type(level) == "number" and level > 0 and type(mapID) == "number" and mapID > 0 then
+            local level = ResolveRunLevel(run)
+            local mapID = ResolveRunMapID(run)
+            if level then
                 if not seasonBest or level > seasonBest.level then
                     seasonBest = { level = level, mapID = mapID }
                 end
@@ -924,6 +953,10 @@ local function BuildBestReply()
         seasonBest = seasonBest or mapSeasonBest
     end
 
+    if not weekBest and seasonBest then
+        weekBest = seasonBest
+    end
+
     return string.format(
         "%s Best - Week: %s / Season: %s",
         REPLY_PREFIX,
@@ -950,6 +983,7 @@ local function ExtractRequestCommand(message)
     if command == KEY_TEXT_COMMAND
         or command == KEYS_TEXT_COMMAND
         or command == SCORE_TEXT_COMMAND
+        or command == SCORES_TEXT_COMMAND
         or command == BEST_TEXT_COMMAND then
         return command
     end
@@ -966,7 +1000,7 @@ local function BuildReplyForCommand(command)
         return BuildKeystoneReply()
     end
 
-    if command == SCORE_TEXT_COMMAND then
+    if command == SCORE_TEXT_COMMAND or command == SCORES_TEXT_COMMAND then
         return BuildScoreReply()
     end
 
