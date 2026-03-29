@@ -1902,10 +1902,9 @@ local function RenderMythicUI()
                 ui.enemyBar:Show()
                 ui.enemyBar.status:SetValue(barValue)
                 ui.enemyBar.text:SetText(string.format("Enemy Forces %d%%", displayEnemyPercent))
-                ui.enemyBar.text:SetPoint("CENTER", ui.enemyBar, "CENTER", 0, 0)
                 ui.enemyBar.text:SetTextColor(1, 1, 1, 1)
-                ui.enemyBar.text:SetShadowColor(0, 0, 0, 0.9)
-                ui.enemyBar.text:SetShadowOffset(1, -1)
+                ui.enemyBar.text:SetShadowColor(0, 0, 0, 0)
+                ui.enemyBar.text:SetShadowOffset(0, 0)
 
                 if barValue > 0 and barValue < 1 then
                     ui.enemyBar.edge:ClearAllPoints()
@@ -2160,10 +2159,17 @@ local function CreateMythicUI()
     enemyBar.labelBackdrop:SetTexture("Interface\\Buttons\\WHITE8x8")
     enemyBar.labelBackdrop:SetPoint("TOPLEFT", enemyBar, "TOPLEFT", 2, -2)
     enemyBar.labelBackdrop:SetPoint("BOTTOMRIGHT", enemyBar, "BOTTOMRIGHT", -2, 2)
-    enemyBar.labelBackdrop:SetColorTexture(0, 0, 0, 0.25)
+    enemyBar.labelBackdrop:SetColorTexture(0, 0, 0, 0.20)
 
-    enemyBar.text = CreateLine(enemyBar, 12)
+    enemyBar.textLayer = CreateFrame("Frame", nil, enemyBar)
+    enemyBar.textLayer:SetAllPoints(enemyBar)
+    enemyBar.textLayer:SetFrameStrata(enemyBar:GetFrameStrata())
+    enemyBar.textLayer:SetFrameLevel(enemyBar:GetFrameLevel() + 50)
+
+    enemyBar.text = CreateLine(enemyBar.textLayer, 12)
+    enemyBar.text:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
     enemyBar.text:SetJustifyH("CENTER")
+    enemyBar.text:SetPoint("CENTER", enemyBar.textLayer, "CENTER", 0, 0)
 
     ui.enemyBar = enemyBar
 

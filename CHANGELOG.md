@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.2] - 2026-03-28
+
+### Fixed
+- Enemy Forces label now renders on a dedicated top overlay layer above the progress fill so the text stays over the bar as it fills.
+- Reduced label backdrop tint so bar fill remains visible while preserving text contrast.
+
+### Packaging
+- Built release archive at `Releases/1.5.2/KeyMaster.zip`.
+
+## [1.5.1] - 2026-03-28
+
+### Fixed
+- Increased Enemy Forces bar label readability by darkening the label backdrop and using outlined text styling.
+
+### Packaging
+- Built release archive at `Releases/1.5.1/KeyMaster.zip`.
+
 ## [1.5.0] - 2026-03-28
 
 ### Fixed
