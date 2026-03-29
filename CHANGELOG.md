@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.5] - 2026-03-29
+
+### Fixed
+- Restored startup initialization by registering `ADDON_LOADED` at file load so the addon can receive its first event and initialize correctly.
+- Kept deferred registration for remaining frame events after initialization to preserve protected-call safety.
+
+### Packaging
+- Built release archive at `Releases/1.5.5/KeyMaster.zip`.
+
 ## [1.5.4] - 2026-03-29
 
 ### Fixed

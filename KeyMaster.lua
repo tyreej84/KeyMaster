@@ -2392,7 +2392,6 @@ SlashCmdList.KEYMASTER = function(message)
 end
 
 local function RegisterFrameEvents()
-    pcall(frame.RegisterEvent, frame, "ADDON_LOADED")
     pcall(frame.RegisterEvent, frame, "PLAYER_LOGIN")
     pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_WORLD")
     pcall(frame.RegisterEvent, frame, "PLAYER_REGEN_ENABLED")
@@ -2412,6 +2411,9 @@ local function RegisterFrameEvents()
     pcall(frame.RegisterEvent, frame, "CHAT_MSG_INSTANCE_CHAT_LEADER")
     pcall(frame.RegisterEvent, frame, "CHAT_MSG_GUILD")
 end
+
+-- Register ADDON_LOADED immediately so initialization can begin safely.
+pcall(frame.RegisterEvent, frame, "ADDON_LOADED")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
