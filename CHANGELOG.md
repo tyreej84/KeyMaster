@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.4] - 2026-03-29
+
+### Fixed
+- Deferred frame event registration to ADDON_LOADED handler to prevent protected-function errors during addon load.
+- RegisterEvent calls now use deferred execution via pcall guards in a safe event context.
+
+### Packaging
+- Built release archive at `Releases/1.5.4/KeyMaster.zip`.
+
 ## [1.5.3] - 2026-03-29
 
 ### Fixed
