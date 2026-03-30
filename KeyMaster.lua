@@ -52,6 +52,7 @@ local ui = {
     observedKeystoneSnapshot = nil,
     enemyForcesTotalUnits = nil,
     enemyForcesMapID = nil,
+    frameEventsRegistered = false,
 }
 
 local ENEMY_FORCES_TOTAL_UNITS_BY_MAP_ID = {
@@ -966,11 +967,12 @@ local function BuildBestReply()
 end
 
 local function ExtractRequestCommand(message)
-    if type(message) ~= "string" or message == "" then
+    local msg = tostring(message or "")
+    if msg == "" then
         return nil
     end
 
-    local msg = strtrim(strlower(message))
+    msg = strtrim(strlower(msg))
     msg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 
     local command = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
@@ -2426,28 +2428,34 @@ SlashCmdList.KEYMASTER = function(message)
 end
 
 local function RegisterFrameEvents()
-    pcall(frame.RegisterEvent, frame, "PLAYER_LOGIN")
-    pcall(frame.RegisterEvent, frame, "PLAYER_ENTERING_WORLD")
-    pcall(frame.RegisterEvent, frame, "PLAYER_REGEN_ENABLED")
-    pcall(frame.RegisterEvent, frame, "CHALLENGE_MODE_START")
-    pcall(frame.RegisterEvent, frame, "CHALLENGE_MODE_COMPLETED")
-    pcall(frame.RegisterEvent, frame, "CHALLENGE_MODE_RESET")
-    pcall(frame.RegisterEvent, frame, "COMBAT_LOG_EVENT_UNFILTERED")
-    pcall(frame.RegisterEvent, frame, "SCENARIO_CRITERIA_UPDATE")
-    pcall(frame.RegisterEvent, frame, "GROUP_ROSTER_UPDATE")
-    pcall(frame.RegisterEvent, frame, "UNIT_FLAGS")
-    pcall(frame.RegisterEvent, frame, "PLAYER_DEAD")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_PARTY")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_PARTY_LEADER")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_RAID")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_RAID_LEADER")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_INSTANCE_CHAT")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_INSTANCE_CHAT_LEADER")
-    pcall(frame.RegisterEvent, frame, "CHAT_MSG_GUILD")
+    if ui.frameEventsRegistered then
+        return
+    end
+
+    ui.frameEventsRegistered = true
+
+    frame:RegisterEvent("PLAYER_LOGIN")
+    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    frame:RegisterEvent("CHALLENGE_MODE_START")
+    frame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+    frame:RegisterEvent("CHALLENGE_MODE_RESET")
+    frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    frame:RegisterEvent("SCENARIO_CRITERIA_UPDATE")
+    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    frame:RegisterEvent("UNIT_FLAGS")
+    frame:RegisterEvent("PLAYER_DEAD")
+    frame:RegisterEvent("CHAT_MSG_PARTY")
+    frame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
+    frame:RegisterEvent("CHAT_MSG_RAID")
+    frame:RegisterEvent("CHAT_MSG_RAID_LEADER")
+    frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT")
+    frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT_LEADER")
+    frame:RegisterEvent("CHAT_MSG_GUILD")
 end
 
 -- Register ADDON_LOADED immediately so initialization can begin safely.
-pcall(frame.RegisterEvent, frame, "ADDON_LOADED")
+frame:RegisterEvent("ADDON_LOADED")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then

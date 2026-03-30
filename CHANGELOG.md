@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.7] - 2026-03-30
+
+### Fixed
+- Hardened chat command parsing against secret-string taint by converting incoming chat message values to plain strings before comparisons/parsing.
+- Reworked deferred event registration to use direct `frame:RegisterEvent(...)` calls in safe initialization context, removing pcall-wrapped registration that could trigger protected-action reports.
+- Added one-time frame-event registration guard to prevent duplicate event wiring.
+
+### Packaging
+- Built release archive at `Releases/1.5.7/KeyMaster.zip`.
+
 ## [1.5.6] - 2026-03-29
 
 ### Fixed
