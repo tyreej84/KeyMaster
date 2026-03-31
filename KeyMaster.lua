@@ -967,27 +967,31 @@ local function BuildBestReply()
 end
 
 local function ExtractRequestCommand(message)
-    local msg = tostring(message or "")
-    if msg == "" then
+    if type(message) ~= "string" then
+        return nil
+    end
+
+    local ok, msg = pcall(string.format, "%s", message)
+    if not ok or type(msg) ~= "string" then
         return nil
     end
 
     msg = strtrim(strlower(msg))
     msg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 
-    local command = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
-    if not command then
+    local parsed = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
+    if not parsed then
         return nil
     end
 
-    command = command:gsub("[,%.%?!;:]+$", "")
-    command = string.format("%s", command)
-    if command == KEY_TEXT_COMMAND
-        or command == KEYS_TEXT_COMMAND
-        or command == SCORE_TEXT_COMMAND
-        or command == SCORES_TEXT_COMMAND
-        or command == BEST_TEXT_COMMAND then
-        return command
+    parsed = parsed:gsub("[,%.%?!;:]+$", "")
+    parsed = string.format("%s", parsed)
+    if parsed == KEY_TEXT_COMMAND
+        or parsed == KEYS_TEXT_COMMAND
+        or parsed == SCORE_TEXT_COMMAND
+        or parsed == SCORES_TEXT_COMMAND
+        or parsed == BEST_TEXT_COMMAND then
+        return parsed
     end
 
     return nil
@@ -2427,42 +2431,37 @@ SlashCmdList.KEYMASTER = function(message)
     PrintLocal("unknown command. Use: settings, status, deaths, criteria, forces, ui on, ui off, ui restore, lock, unlock, hide, show, reset, scale <value>")
 end
 
-local function RegisterFrameEvents()
-    if ui.frameEventsRegistered then
-        return
-    end
+local FRAME_EVENTS = {
+    "ADDON_LOADED",
+    "PLAYER_LOGIN",
+    "PLAYER_ENTERING_WORLD",
+    "PLAYER_REGEN_ENABLED",
+    "CHALLENGE_MODE_START",
+    "CHALLENGE_MODE_COMPLETED",
+    "CHALLENGE_MODE_RESET",
+    "COMBAT_LOG_EVENT_UNFILTERED",
+    "SCENARIO_CRITERIA_UPDATE",
+    "GROUP_ROSTER_UPDATE",
+    "UNIT_FLAGS",
+    "PLAYER_DEAD",
+    "CHAT_MSG_PARTY",
+    "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID",
+    "CHAT_MSG_RAID_LEADER",
+    "CHAT_MSG_INSTANCE_CHAT",
+    "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_GUILD",
+}
 
-    ui.frameEventsRegistered = true
-
-    frame:RegisterEvent("PLAYER_LOGIN")
-    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    frame:RegisterEvent("CHALLENGE_MODE_START")
-    frame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-    frame:RegisterEvent("CHALLENGE_MODE_RESET")
-    frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    frame:RegisterEvent("SCENARIO_CRITERIA_UPDATE")
-    frame:RegisterEvent("GROUP_ROSTER_UPDATE")
-    frame:RegisterEvent("UNIT_FLAGS")
-    frame:RegisterEvent("PLAYER_DEAD")
-    frame:RegisterEvent("CHAT_MSG_PARTY")
-    frame:RegisterEvent("CHAT_MSG_PARTY_LEADER")
-    frame:RegisterEvent("CHAT_MSG_RAID")
-    frame:RegisterEvent("CHAT_MSG_RAID_LEADER")
-    frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT")
-    frame:RegisterEvent("CHAT_MSG_INSTANCE_CHAT_LEADER")
-    frame:RegisterEvent("CHAT_MSG_GUILD")
+for _, eventName in ipairs(FRAME_EVENTS) do
+    frame:RegisterEvent(eventName)
 end
-
--- Register ADDON_LOADED immediately so initialization can begin safely.
-frame:RegisterEvent("ADDON_LOADED")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
             InitializeDatabase()
-            RegisterFrameEvents()
         elseif loadedAddon == "Blizzard_ChallengesUI" then
             HookChallengesFrame()
         end

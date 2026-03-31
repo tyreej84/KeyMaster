@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.8] - 2026-03-31
+
+### Fixed
+- Removed runtime/retry event registration and restored static frame event registration to avoid protected `Frame:RegisterEvent()` forbidden errors.
+- Hardened chat command extraction to avoid direct restricted-string equality checks that can trigger secret-string taint comparisons.
+
+### Packaging
+- Built release archive at `Releases/1.5.8/KeyMaster.zip`.
+
 ## [1.5.7] - 2026-03-30
 
 ### Fixed
