@@ -22,6 +22,13 @@ local KEY_TEXT_COMMAND = "!key"
 local SCORE_TEXT_COMMAND = "!score"
 local SCORES_TEXT_COMMAND = "!scores"
 local BEST_TEXT_COMMAND = "!best"
+local REQUEST_COMMAND_SET = {
+    ["!key"] = true,
+    ["!keys"] = true,
+    ["!score"] = true,
+    ["!scores"] = true,
+    ["!best"] = true,
+}
 local MISMATCH_TOAST_COOLDOWN_SECONDS = 2
 local UI_REFRESH_INTERVAL_SECONDS = 0.2
 local COMPLETION_DISPLAY_SECONDS = 90
@@ -967,31 +974,27 @@ local function BuildBestReply()
 end
 
 local function ExtractRequestCommand(message)
-    if type(message) ~= "string" then
+    local ok, command = pcall(function(rawMessage)
+        local msg = string.format("%s", rawMessage)
+        msg = strtrim(strlower(msg))
+        msg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+
+        local parsed = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
+        if type(parsed) ~= "string" then
+            return nil
+        end
+
+        parsed = parsed:gsub("[,%.%?!;:]+$", "")
+        parsed = string.format("%s", parsed)
+        if REQUEST_COMMAND_SET[parsed] then
+            return parsed
+        end
+
         return nil
-    end
+    end, message)
 
-    local ok, msg = pcall(string.format, "%s", message)
-    if not ok or type(msg) ~= "string" then
-        return nil
-    end
-
-    msg = strtrim(strlower(msg))
-    msg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-
-    local parsed = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
-    if not parsed then
-        return nil
-    end
-
-    parsed = parsed:gsub("[,%.%?!;:]+$", "")
-    parsed = string.format("%s", parsed)
-    if parsed == KEY_TEXT_COMMAND
-        or parsed == KEYS_TEXT_COMMAND
-        or parsed == SCORE_TEXT_COMMAND
-        or parsed == SCORES_TEXT_COMMAND
-        or parsed == BEST_TEXT_COMMAND then
-        return parsed
+    if ok then
+        return command
     end
 
     return nil
@@ -1017,8 +1020,25 @@ local function BuildReplyForCommand(command)
     return nil
 end
 
+local function CanReadChatPayload(message)
+    if type(message) ~= "string" then
+        return false
+    end
+
+    if type(canaccessvalue) == "function" then
+        local ok, readable = pcall(canaccessvalue, message)
+        return ok and readable == true
+    end
+
+    return true
+end
+
 local function HandleChatMessage(event, message)
     if not CHAT_EVENTS[event] then
+        return
+    end
+
+    if not CanReadChatPayload(message) then
         return
     end
 
@@ -1027,8 +1047,8 @@ local function HandleChatMessage(event, message)
         return
     end
 
-    local reply = BuildReplyForCommand(command)
-    if not reply then
+    local ok, reply = pcall(BuildReplyForCommand, command)
+    if not ok or not reply then
         return
     end
 

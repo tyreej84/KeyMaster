@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Removed runtime/retry event registration and restored static frame event registration to avoid protected `Frame:RegisterEvent()` forbidden errors.
 - Hardened chat command extraction to avoid direct restricted-string equality checks that can trigger secret-string taint comparisons.
+- Added AstralKeys-style `canaccessvalue` guard before chat parsing so unreadable secret-string payloads are dropped safely.
+- Wrapped command reply construction in protected execution to fail closed on unexpected runtime payload edge cases.
 
 ### Packaging
 - Built release archive at `Releases/1.5.8/KeyMaster.zip`.
