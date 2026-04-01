@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.9] - 2026-04-01
+
+### Fixed
+- Restored automatic keystone slotting when the Font of Power receptacle opens — scans bags for a Mythic Keystone and slots it via `C_ChallengeMode.SlotKeystone()` without triggering protected-action errors.
+- Updated settings panel description to accurately reflect that automatic keystone slotting is active when the KeyMaster Mythic+ UI is enabled.
+
+### Packaging
+- Built release archive at `Releases/1.5.9/KeyMaster.zip`.
+
 ## [1.5.8] - 2026-03-31
 
 ### Fixed

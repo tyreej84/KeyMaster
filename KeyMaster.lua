@@ -1794,7 +1794,7 @@ local function RegisterSettingsPanel()
     description:SetPoint("TOPLEFT", checkbox, "BOTTOMLEFT", 6, -6)
     description:SetWidth(560)
     description:SetJustifyH("LEFT")
-    description:SetText("Disabled: KeyMaster keeps chat replies and Font of Power auto-slotting, but Blizzard's default Mythic+ UI remains active.")
+    description:SetText("Disabled: KeyMaster keeps chat replies while Blizzard's default Mythic+ UI remains active. Automatic keystone slotting is active when this setting is enabled.")
 
     local trackerCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     trackerCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", -2, -12)
@@ -2256,9 +2256,21 @@ local function RefreshMythicUI()
 end
 
 local function TryAutoSlotKeystone()
-    -- Disabled: automatic keystone slotting can taint protected Blizzard UI flows.
-    -- Players can still slot the key manually without KeyMaster causing blocked-action popups.
-    return
+    if not (C_ChallengeMode and C_ChallengeMode.SlotKeystone) then return end
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID and C_Container.PickupContainerItem) then return end
+    for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
+        local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+        for slotIndex = 1, slotCount do
+            local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
+            if KEYSTONE_ITEM_IDS[itemID] then
+                C_Container.PickupContainerItem(bagID, slotIndex)
+                if CursorHasItem() then
+                    C_ChallengeMode.SlotKeystone()
+                end
+                return
+            end
+        end
+    end
 end
 
 local function HookChallengesFrame()
