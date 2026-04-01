@@ -2529,7 +2529,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         SyncGroupDeathLogFromUnits()
         CaptureCompletedRunState()
         ui.inChallengeMode = false
-        -- Match AstralKeys behavior: check shortly after completion so the rerolled key can be observed.
+        -- Check shortly after completion so the rerolled key can be observed.
         ScheduleOwnedKeystoneObservation(true, 3)
         if C_Timer and C_Timer.After then
             C_Timer.After(2, RefreshCompletedRunTimingFromAPI)
