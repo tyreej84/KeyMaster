@@ -48,6 +48,7 @@ A Mythic+ utility addon for World of Warcraft with chat replies and a live dunge
 
 - Responds in party, party leader, raid, raid leader, instance, instance leader, and guild chat.
 - Commands are case-insensitive and tolerate trailing punctuation (for example, `!score?`).
+- Chat replies and new-keystone announcements that trigger during combat are deferred until combat ends.
 - If key/score APIs are temporarily unavailable, KeyMaster sends explicit fallback responses instead of failing silently.
 - Automatically slots your keystone when the Font of Power receptacle opens.
 - The overlay appears automatically during active Mythic+ runs when the KeyMaster Mythic+ UI setting is enabled.

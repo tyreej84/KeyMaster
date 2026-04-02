@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-04-02
+
+### Fixed
+- Deferred outgoing chat replies during combat and flushes them once combat ends instead of dropping them outright.
+- Deferred new-keystone party announcements during combat so post-run key updates still announce safely after `PLAYER_REGEN_ENABLED`.
+
+### Packaging
+- Built release archive at `Releases/1.6.0/KeyMaster.zip`.
+
 ## [1.5.9] - 2026-04-01
 
 ### Fixed

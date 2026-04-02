@@ -60,6 +60,7 @@ local ui = {
     enemyForcesTotalUnits = nil,
     enemyForcesMapID = nil,
     frameEventsRegistered = false,
+    deferredChatMessages = {},
 }
 
 local ENEMY_FORCES_TOTAL_UNITS_BY_MAP_ID = {
@@ -106,6 +107,60 @@ local CHAT_EVENT_TO_CHANNEL = {
     CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
     CHAT_MSG_GUILD = "GUILD",
 }
+
+local MAX_DEFERRED_CHAT_MESSAGES = 10
+
+local function IsCombatLockdownActive()
+    return InCombatLockdown and InCombatLockdown() == true
+end
+
+local function QueueDeferredChatMessage(message, chatType)
+    if type(message) ~= "string" or message == "" or type(chatType) ~= "string" or chatType == "" then
+        return
+    end
+
+    local queue = ui.deferredChatMessages
+    local lastEntry = queue[#queue]
+    if lastEntry and lastEntry.message == message and lastEntry.chatType == chatType then
+        return
+    end
+
+    if #queue >= MAX_DEFERRED_CHAT_MESSAGES then
+        table.remove(queue, 1)
+    end
+
+    table.insert(queue, {
+        message = message,
+        chatType = chatType,
+    })
+end
+
+local function SendOrQueueChatMessage(message, chatType)
+    if IsCombatLockdownActive() then
+        QueueDeferredChatMessage(message, chatType)
+        return false
+    end
+
+    return pcall(SendChatMessage, message, chatType)
+end
+
+local function FlushDeferredChatMessages()
+    if IsCombatLockdownActive() then
+        return
+    end
+
+    local queue = ui.deferredChatMessages
+    if not queue or #queue == 0 then
+        return
+    end
+
+    ui.deferredChatMessages = {}
+    for _, entry in ipairs(queue) do
+        if type(entry) == "table" and type(entry.message) == "string" and entry.message ~= "" and type(entry.chatType) == "string" and entry.chatType ~= "" then
+            pcall(SendChatMessage, entry.message, entry.chatType)
+        end
+    end
+end
 
 local function ResetDeathLog()
     ui.deathLog = {}
@@ -764,7 +819,7 @@ local function AnnounceNewOwnedKeystone(mapID, keyLevel)
         return
     end
 
-    pcall(SendChatMessage, string.format("%s New key %s", REPLY_PREFIX, link), "PARTY")
+    SendOrQueueChatMessage(string.format("%s New key %s", REPLY_PREFIX, link), "PARTY")
 end
 
 local function ObserveOwnedKeystone(allowAnnounce)
@@ -1057,7 +1112,7 @@ local function HandleChatMessage(event, message)
         return
     end
 
-    pcall(SendChatMessage, reply, chatType)
+    SendOrQueueChatMessage(reply, chatType)
 end
 
 local function NormalizeAffixIDs(...)
@@ -2573,6 +2628,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
         end
         if event == "PLAYER_ENTERING_WORLD" then
             ScheduleOwnedKeystoneObservation(false, 1)
+        end
+        if event == "PLAYER_REGEN_ENABLED" then
+            FlushDeferredChatMessages()
         end
         SyncGroupDeathLogFromUnits()
         RefreshMythicUI()
