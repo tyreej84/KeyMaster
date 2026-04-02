@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-04-02
+
+### Fixed
+- Moved frame event registration out of main chunk and into a deferred bootstrap path to prevent `[ADDON_ACTION_FORBIDDEN]` errors on `Frame:RegisterEvent()`.
+- Added guarded retry registration logic so event wiring completes safely after load/combat constraints clear.
+
+### Packaging
+- Built release archive at `Releases/1.6.1/KeyMaster.zip`.
+
 ## [1.6.0] - 2026-04-02
 
 ### Fixed
