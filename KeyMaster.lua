@@ -2519,7 +2519,6 @@ SlashCmdList.KEYMASTER = function(message)
 end
 
 local FRAME_EVENTS = {
-    "ADDON_LOADED",
     "PLAYER_LOGIN",
     "PLAYER_ENTERING_WORLD",
     "PLAYER_REGEN_ENABLED",
@@ -2540,51 +2539,25 @@ local FRAME_EVENTS = {
     "CHAT_MSG_GUILD",
 }
 
-local function TryRegisterFrameEvents()
+local function EnsureRuntimeFrameEventsRegistered()
     if ui.frameEventsRegistered then
-        return true
+        return
     end
 
     for _, eventName in ipairs(FRAME_EVENTS) do
-        local ok = pcall(frame.RegisterEvent, frame, eventName)
-        if not ok then
-            return false
-        end
+        frame:RegisterEvent(eventName)
     end
 
     ui.frameEventsRegistered = true
-    return true
 end
 
-local function BootstrapFrameEvents()
-    if ui.frameEventsRegistered then
-        frame:SetScript("OnUpdate", nil)
-        return
-    end
-
-    if InCombatLockdown and InCombatLockdown() then
-        return
-    end
-
-    if TryRegisterFrameEvents() then
-        frame:SetScript("OnUpdate", nil)
-    end
-end
-
-frame:SetScript("OnUpdate", function(_, elapsed)
-    ui.frameEventRetryElapsed = (ui.frameEventRetryElapsed or 0) + (elapsed or 0)
-    if ui.frameEventRetryElapsed < 0.5 then
-        return
-    end
-
-    ui.frameEventRetryElapsed = 0
-    BootstrapFrameEvents()
-end)
+frame:RegisterEvent("ADDON_LOADED")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
+            EnsureRuntimeFrameEventsRegistered()
             InitializeDatabase()
         elseif loadedAddon == "Blizzard_ChallengesUI" then
             HookChallengesFrame()

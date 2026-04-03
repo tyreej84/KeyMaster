@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2026-04-02
+
+### Fixed
+- Replaced the `pcall`-based deferred event bootstrap with a safer `ADDON_LOADED`-first registration flow.
+- Eliminated the protected `UNKNOWN()`/`Frame:RegisterEvent()` forbidden path seen in BugGrabber stacks.
+
+### Packaging
+- Built release archive at `Releases/1.6.2/KeyMaster.zip`.
+
 ## [1.6.1] - 2026-04-02
 
 ### Fixed
