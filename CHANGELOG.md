@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.3] - 2026-04-03
+
+### Fixed
+- Deferred runtime event registration when combat lockdown is active, then retries registration after combat ends.
+- Added idempotent login initialization so startup setup still runs if `PLAYER_LOGIN` was missed while runtime events were deferred.
+
+### Packaging
+- Built release archive at `Releases/1.6.3/KeyMaster.zip`.
+
 ## [1.6.2] - 2026-04-02
 
 ### Fixed

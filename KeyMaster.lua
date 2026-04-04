@@ -60,6 +60,8 @@ local ui = {
     enemyForcesTotalUnits = nil,
     enemyForcesMapID = nil,
     frameEventsRegistered = false,
+    runtimeEventsPending = false,
+    loginInitialized = false,
     deferredChatMessages = {},
 }
 
@@ -2551,14 +2553,63 @@ local function EnsureRuntimeFrameEventsRegistered()
     ui.frameEventsRegistered = true
 end
 
+local function PerformLoginInitialization()
+    if ui.loginInitialized then
+        return
+    end
+
+    ui.loginInitialized = true
+    InitializeDatabase()
+    CreateMythicUI()
+    RegisterSettingsPanel()
+    if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
+        HookChallengesFrame()
+    end
+    ObserveOwnedKeystone(false)
+    RefreshMythicUI()
+end
+
+local function BeginDeferredRuntimeEventRegistration()
+    if ui.frameEventsRegistered or ui.runtimeEventsPending then
+        return
+    end
+
+    ui.runtimeEventsPending = true
+    frame:SetScript("OnUpdate", function()
+        if not ui.runtimeEventsPending then
+            frame:SetScript("OnUpdate", nil)
+            return
+        end
+
+        if IsCombatLockdownActive() then
+            return
+        end
+
+        EnsureRuntimeFrameEventsRegistered()
+        ui.runtimeEventsPending = false
+        frame:SetScript("OnUpdate", nil)
+
+        if IsLoggedIn and IsLoggedIn() then
+            PerformLoginInitialization()
+        end
+    end)
+end
+
 frame:RegisterEvent("ADDON_LOADED")
 
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
-            EnsureRuntimeFrameEventsRegistered()
             InitializeDatabase()
+            if IsCombatLockdownActive() then
+                BeginDeferredRuntimeEventRegistration()
+            else
+                EnsureRuntimeFrameEventsRegistered()
+            end
+            if IsLoggedIn and IsLoggedIn() then
+                PerformLoginInitialization()
+            end
         elseif loadedAddon == "Blizzard_ChallengesUI" then
             HookChallengesFrame()
         end
@@ -2566,14 +2617,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
-        InitializeDatabase()
-        CreateMythicUI()
-        RegisterSettingsPanel()
-        if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
-            HookChallengesFrame()
-        end
-        ObserveOwnedKeystone(false)
-        RefreshMythicUI()
+        PerformLoginInitialization()
         return
     end
 
