@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.4] - 2026-04-08
+
+### Fixed
+- Removed runtime/deferred `Frame:RegisterEvent()` calls and restored one-time static event registration at file load.
+- Eliminated the KeyMaster forbidden call path seen in BugGrabber stacks (`Frame:RegisterEvent()` at runtime).
+
+### Packaging
+- Built release archive at `Releases/1.6.4/KeyMaster.zip`.
+
 ## [1.6.3] - 2026-04-03
 
 ### Fixed
