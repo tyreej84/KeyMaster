@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.5] - 2026-04-09
+
+### Fixed
+- Routed frame event registration through `securecallfunction` to avoid the protected `Frame:RegisterEvent()` forbidden path seen in fresh BugGrabber dumps.
+- Kept one-time startup event wiring behavior while hardening against taint-sensitive registration contexts.
+
+### Packaging
+- Built release archive at `Releases/1.6.5/KeyMaster.zip`.
+
 ## [1.6.4] - 2026-04-08
 
 ### Fixed

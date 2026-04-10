@@ -2556,8 +2556,17 @@ local function PerformLoginInitialization()
     RefreshMythicUI()
 end
 
+local function SafeRegisterEvent(targetFrame, eventName)
+    if securecallfunction then
+        securecallfunction(targetFrame.RegisterEvent, targetFrame, eventName)
+        return
+    end
+
+    targetFrame:RegisterEvent(eventName)
+end
+
 for _, eventName in ipairs(FRAME_EVENTS) do
-    frame:RegisterEvent(eventName)
+    SafeRegisterEvent(frame, eventName)
 end
 
 frame:SetScript("OnEvent", function(_, event, ...)
