@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.6] - 2026-04-11
+
+### Fixed
+- Moved frame event registration to early startup immediately after frame creation, before taint-prone runtime paths.
+- Removed the `securecallfunction` registration wrapper and late registration path tied to fresh `UNKNOWN()` forbidden BugGrabber stacks.
+
+### Packaging
+- Built release archive at `Releases/1.6.6/KeyMaster.zip`.
+
 ## [1.6.5] - 2026-04-09
 
 ### Fixed

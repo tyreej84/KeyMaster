@@ -14,6 +14,32 @@ local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 
 local frame = CreateFrame("Frame")
+local FRAME_EVENTS = {
+    "ADDON_LOADED",
+    "PLAYER_LOGIN",
+    "PLAYER_ENTERING_WORLD",
+    "PLAYER_REGEN_ENABLED",
+    "CHALLENGE_MODE_START",
+    "CHALLENGE_MODE_COMPLETED",
+    "CHALLENGE_MODE_RESET",
+    "COMBAT_LOG_EVENT_UNFILTERED",
+    "SCENARIO_CRITERIA_UPDATE",
+    "GROUP_ROSTER_UPDATE",
+    "UNIT_FLAGS",
+    "PLAYER_DEAD",
+    "CHAT_MSG_PARTY",
+    "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID",
+    "CHAT_MSG_RAID_LEADER",
+    "CHAT_MSG_INSTANCE_CHAT",
+    "CHAT_MSG_INSTANCE_CHAT_LEADER",
+    "CHAT_MSG_GUILD",
+}
+
+for _, eventName in ipairs(FRAME_EVENTS) do
+    frame:RegisterEvent(eventName)
+end
+
 local REPLY_PREFIX = "KeyMaster:"
 local KEYSTONE_ITEM_IDS = { [180653] = true, [158923] = true, [151086] = true }
 local KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
@@ -2518,28 +2544,6 @@ SlashCmdList.KEYMASTER = function(message)
     PrintLocal("unknown command. Use: settings, status, deaths, criteria, forces, ui on, ui off, ui restore, lock, unlock, hide, show, reset, scale <value>")
 end
 
-local FRAME_EVENTS = {
-    "ADDON_LOADED",
-    "PLAYER_LOGIN",
-    "PLAYER_ENTERING_WORLD",
-    "PLAYER_REGEN_ENABLED",
-    "CHALLENGE_MODE_START",
-    "CHALLENGE_MODE_COMPLETED",
-    "CHALLENGE_MODE_RESET",
-    "COMBAT_LOG_EVENT_UNFILTERED",
-    "SCENARIO_CRITERIA_UPDATE",
-    "GROUP_ROSTER_UPDATE",
-    "UNIT_FLAGS",
-    "PLAYER_DEAD",
-    "CHAT_MSG_PARTY",
-    "CHAT_MSG_PARTY_LEADER",
-    "CHAT_MSG_RAID",
-    "CHAT_MSG_RAID_LEADER",
-    "CHAT_MSG_INSTANCE_CHAT",
-    "CHAT_MSG_INSTANCE_CHAT_LEADER",
-    "CHAT_MSG_GUILD",
-}
-
 local function PerformLoginInitialization()
     if ui.loginInitialized then
         return
@@ -2554,19 +2558,6 @@ local function PerformLoginInitialization()
     end
     ObserveOwnedKeystone(false)
     RefreshMythicUI()
-end
-
-local function SafeRegisterEvent(targetFrame, eventName)
-    if securecallfunction then
-        securecallfunction(targetFrame.RegisterEvent, targetFrame, eventName)
-        return
-    end
-
-    targetFrame:RegisterEvent(eventName)
-end
-
-for _, eventName in ipairs(FRAME_EVENTS) do
-    SafeRegisterEvent(frame, eventName)
 end
 
 frame:SetScript("OnEvent", function(_, event, ...)
