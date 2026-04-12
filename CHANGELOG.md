@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.7] - 2026-04-11
+
+### Fixed
+- Stopped registering the full event list in the main chunk, which was still triggering protected `Frame:RegisterEvent()` forbidden errors in fresh BugGrabber captures.
+- Kept only `ADDON_LOADED` registration at file load and moved runtime event registration into addon `ADDON_LOADED` handling with one-time guarding.
+
+### Packaging
+- Built release archive at `Releases/1.6.7/KeyMaster.zip`.
+
 ## [1.6.6] - 2026-04-11
 
 ### Fixed

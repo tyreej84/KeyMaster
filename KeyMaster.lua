@@ -14,8 +14,9 @@ local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 
 local frame = CreateFrame("Frame")
-local FRAME_EVENTS = {
-    "ADDON_LOADED",
+frame:RegisterEvent("ADDON_LOADED")
+
+local RUNTIME_EVENTS = {
     "PLAYER_LOGIN",
     "PLAYER_ENTERING_WORLD",
     "PLAYER_REGEN_ENABLED",
@@ -36,8 +37,17 @@ local FRAME_EVENTS = {
     "CHAT_MSG_GUILD",
 }
 
-for _, eventName in ipairs(FRAME_EVENTS) do
-    frame:RegisterEvent(eventName)
+local runtimeEventsRegistered = false
+
+local function RegisterRuntimeEvents()
+    if runtimeEventsRegistered then
+        return
+    end
+
+    runtimeEventsRegistered = true
+    for _, eventName in ipairs(RUNTIME_EVENTS) do
+        frame:RegisterEvent(eventName)
+    end
 end
 
 local REPLY_PREFIX = "KeyMaster:"
@@ -2564,6 +2574,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
+            RegisterRuntimeEvents()
             InitializeDatabase()
             if IsLoggedIn and IsLoggedIn() then
                 PerformLoginInitialization()
