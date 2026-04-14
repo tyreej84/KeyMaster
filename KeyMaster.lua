@@ -3309,9 +3309,15 @@ local function CreateKSMWindow()
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
 
+    local tabWidth = 120
+    local tabHeight = 24
+    local tabGap = 12
+    local totalTabsWidth = (tabWidth * 3) + (tabGap * 2)
+    local tabsStartX = floor(((frame:GetWidth() or 600) - totalTabsWidth) / 2 + 0.5)
+
     local function CreateTabButton(text, xOffset)
         local button = CreateFrame("Button", nil, frame)
-        button:SetSize(120, 24)
+        button:SetSize(tabWidth, tabHeight)
         button:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", xOffset, 8)
         
         -- Black background with white border and blue tint
@@ -3370,9 +3376,9 @@ local function CreateKSMWindow()
         return button
     end
 
-    local mainTab = CreateTabButton("Main", 70)   -- Centered: (600 - 360 - 20) / 2 = 110, adjusted for button width
-    local partyTab = CreateTabButton("Party", 200)
-    local guildTab = CreateTabButton("Guild", 330)
+    local mainTab = CreateTabButton("Main", tabsStartX)
+    local partyTab = CreateTabButton("Party", tabsStartX + tabWidth + tabGap)
+    local guildTab = CreateTabButton("Guild", tabsStartX + (tabWidth + tabGap) * 2)
 
     local mainContent = CreateFrame("Frame", nil, frame)
     mainContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -34)
