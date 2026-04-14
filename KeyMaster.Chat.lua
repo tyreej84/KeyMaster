@@ -104,11 +104,6 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
         return
     end
 
-    if event == "CHAT_MSG_GUILD" and (command == ctx.KEY_TEXT_COMMAND or command == ctx.KEYS_TEXT_COMMAND) then
-        -- !keys should only trigger KeyStoneMastery sync behavior.
-        ctx.RequestGuildSnapshots()
-    end
-
     local ok, reply = pcall(Chat.BuildReplyForCommand, ctx, command)
     if not ok or not reply then
         return
@@ -120,5 +115,11 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
     end
 
     ctx.SendOrQueueChatMessage(reply, chatType)
+
+    if event == "CHAT_MSG_GUILD" and (command == ctx.KEY_TEXT_COMMAND or command == ctx.KEYS_TEXT_COMMAND) then
+        -- Keep sync-request failures from blocking the visible chat reply.
+        pcall(ctx.RequestGuildSnapshots)
+    end
+
     ctx.RefreshKSMWindowIfVisible()
 end
