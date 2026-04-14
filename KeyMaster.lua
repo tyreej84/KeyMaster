@@ -2614,26 +2614,45 @@ local function GetPortalSpellIDForMap(mapID)
 end
 
 local function GetCurrentSeasonPortalEntries()
-    if not (C_ChallengeMode and C_ChallengeMode.GetMapTable) then
-        return {}
-    end
-
-    local ok, maps = pcall(C_ChallengeMode.GetMapTable)
-    if not ok or type(maps) ~= "table" then
-        return {}
-    end
-
     local entries = {}
-    for _, mapID in ipairs(maps) do
+    local addedByMapID = {}
+
+    local function AddPortalEntry(mapID)
+        if type(mapID) ~= "number" or addedByMapID[mapID] then
+            return
+        end
+
         local spellID = GetPortalSpellIDForMap(mapID)
-        if spellID then
-            local mapName = FormatDungeonLabel(mapID)
-            table.insert(entries, {
-                mapID = mapID,
-                mapName = mapName,
-                spellID = spellID,
-                known = IsSpellKnown and IsSpellKnown(spellID) == true,
-            })
+        if not spellID then
+            return
+        end
+
+        addedByMapID[mapID] = true
+        table.insert(entries, {
+            mapID = mapID,
+            mapName = FormatDungeonLabel(mapID),
+            spellID = spellID,
+            known = IsSpellKnown and IsSpellKnown(spellID) == true,
+        })
+    end
+
+    if C_ChallengeMode and C_ChallengeMode.GetMapTable then
+        local ok, maps = pcall(C_ChallengeMode.GetMapTable)
+        if ok and type(maps) == "table" then
+            for _, mapID in ipairs(maps) do
+                AddPortalEntry(mapID)
+            end
+        end
+    end
+
+    -- Fallback: always include configured season portals even if map table is unavailable.
+    local factionGroup = UnitFactionGroup and UnitFactionGroup("player") or nil
+    for mapID in pairs(KSM_PORTAL_SPELL_IDS) do
+        AddPortalEntry(mapID)
+    end
+    if factionGroup == "Horde" then
+        for mapID in pairs(KSM_PORTAL_SPELL_IDS_HORDE) do
+            AddPortalEntry(mapID)
         end
     end
 
@@ -2688,6 +2707,92 @@ local function GetVaultProgressSummary()
     end
 
     return string.format("Vault slots unlocked: %d/%d", unlockedSlots, totalSlots)
+end
+
+local function ResolveBestScore(result1, result2)
+    local score
+
+    if type(result1) == "table" then
+        score = result1.mapScore or result1.score or result1.rating or result1.bestRunScore or result1.currentSeasonScore
+    elseif type(result2) == "table" then
+        score = result2.mapScore or result2.score or result2.rating or result2.bestRunScore or result2.currentSeasonScore
+    end
+
+    score = tonumber(score)
+    if type(score) == "number" and score > 0 then
+        return score
+    end
+
+    return nil
+end
+
+local function GetBestSeasonRunForMap(mapID)
+    if not (type(mapID) == "number" and C_MythicPlus and C_MythicPlus.GetSeasonBestForMap) then
+        return nil
+    end
+
+    local ok, result1, result2 = pcall(C_MythicPlus.GetSeasonBestForMap, mapID)
+    if not ok then
+        return nil
+    end
+
+    local level = ResolveBestLevel(result1, result2)
+    if not level then
+        return nil
+    end
+
+    return {
+        mapID = mapID,
+        level = level,
+        score = ResolveBestScore(result1, result2),
+    }
+end
+
+local function GetDungeonTileTexture(mapID, spellID)
+    if C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+        local ok, result1, result2, result3, result4, result5, result6 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+        if ok then
+            local candidates = { result6, result5, result4, result3, result2, result1 }
+            for _, candidate in ipairs(candidates) do
+                if type(candidate) == "number" or type(candidate) == "string" then
+                    return candidate
+                end
+            end
+        end
+    end
+
+    if spellID and C_Spell and C_Spell.GetSpellInfo then
+        local _, _, spellIcon = C_Spell.GetSpellInfo(spellID)
+        if spellIcon then
+            return spellIcon
+        end
+    end
+
+    return "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+local function TrySetGreatVaultTexture(texture)
+    if not texture then
+        return
+    end
+
+    if texture.SetAtlas then
+        local atlasCandidates = {
+            "weeklyrewards-greatvault-unlocked",
+            "weeklyrewards-greatvault-locked",
+            "weeklyrewards-activities-background-mythicplus",
+            "adventures-32x32",
+        }
+
+        for _, atlasName in ipairs(atlasCandidates) do
+            local ok, applied = pcall(texture.SetAtlas, texture, atlasName, true)
+            if ok and applied then
+                return
+            end
+        end
+    end
+
+    texture:SetTexture("Interface\\Buttons\\UI-Quickslot2")
 end
 
 local function TryGetMythicScoreForIdentifier(identifier)
@@ -2811,191 +2916,198 @@ local function RefreshKSMMainTab()
     local _, affixIDs = GetActiveKeystoneDetails()
     local keyMapID, keyLevel = GetOwnedKeystoneSnapshot()
 
-    -- Display affixes as circular icons at top
-    if not ui.ksmAffixIcons then
-        ui.ksmAffixIcons = {}
-    end
-    
-    local affixX = 20
-    local affixY = -30
-    if affixIDs then
-        for index, affixID in ipairs(affixIDs) do
-            local affixIcon = ui.ksmAffixIcons[index]
-            if not affixIcon then
-                affixIcon = ui.ksmMainContent:CreateTexture(nil, "ARTWORK")
-                affixIcon:SetSize(32, 32)
-                ui.ksmAffixIcons[index] = affixIcon
-            end
-            
-            local _, _, affixTexture = GetAffixDisplayInfo(affixID)
-            if affixTexture then
-                affixIcon:SetTexture(affixTexture)
-            else
-                affixIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-            end
-            
-            affixIcon:ClearAllPoints()
-            affixIcon:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", affixX + (index - 1) * 40, affixY)
-            affixIcon:Show()
-        end
-    end
-    
-    for index = (affixIDs and #affixIDs or 0) + 1, #ui.ksmAffixIcons do
-        ui.ksmAffixIcons[index]:Hide()
+    if ui.ksmRatingLine then ui.ksmRatingLine:Hide() end
+    if ui.ksmBestLine then ui.ksmBestLine:Hide() end
+    if ui.ksmAffixLine then ui.ksmAffixLine:Hide() end
+    if ui.ksmKeyLine then ui.ksmKeyLine:Hide() end
+    if ui.ksmVaultLine then ui.ksmVaultLine:Hide() end
+    if ui.ksmPortalsLabel then ui.ksmPortalsLabel:Hide() end
+
+    if not ui.ksmAffixButtons then
+        ui.ksmAffixButtons = {}
     end
 
-    -- Display Great Vault icon in center with Mythic+ rating below
-    if not ui.ksmVaultIcon then
-        ui.ksmVaultIcon = ui.ksmMainContent:CreateTexture(nil, "ARTWORK")
-        ui.ksmVaultIcon:SetSize(64, 64)
-        ui.ksmVaultIcon:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -90)
-        ui.ksmVaultIcon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicRelations-Up")
+    local affixCount = type(affixIDs) == "table" and #affixIDs or 0
+    local affixSize = 38
+    local affixGap = 10
+    local affixStartX = -(((affixCount * affixSize) + ((max(affixCount - 1, 0)) * affixGap)) / 2)
+
+    for index = 1, affixCount do
+        local affixID = affixIDs[index]
+        local button = ui.ksmAffixButtons[index]
+        if not button then
+            button = CreateFrame("Button", nil, ui.ksmMainContent)
+            button:SetSize(affixSize, affixSize)
+
+            local icon = button:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints(button)
+            button.icon = icon
+
+            local border = button:CreateTexture(nil, "OVERLAY")
+            border:SetAllPoints(button)
+            border:SetColorTexture(1, 1, 1, 0.18)
+
+            button:SetScript("OnEnter", function(self)
+                if not self.affixID then
+                    return
+                end
+
+                local name, description = GetAffixDisplayInfo(self.affixID)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:ClearLines()
+                GameTooltip:AddLine(name or string.format("Affix %d", self.affixID), 1, 1, 1)
+                if type(description) == "string" and description ~= "" then
+                    GameTooltip:AddLine(description, 0.85, 0.85, 0.85, true)
+                end
+                GameTooltip:Show()
+            end)
+            button:SetScript("OnLeave", GameTooltip_Hide)
+
+            ui.ksmAffixButtons[index] = button
+        end
+
+        local _, _, affixTexture = GetAffixDisplayInfo(affixID)
+        button.icon:SetTexture(affixTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+        button.affixID = affixID
+        button:ClearAllPoints()
+        button:SetPoint("TOP", ui.ksmMainContent, "TOP", affixStartX + ((index - 1) * (affixSize + affixGap)) + (affixSize / 2), -28)
+        button:Show()
     end
-    
+
+    for index = affixCount + 1, #ui.ksmAffixButtons do
+        ui.ksmAffixButtons[index]:Hide()
+    end
+
+    if ui.ksmVaultButton and ui.ksmVaultButton.icon then
+        TrySetGreatVaultTexture(ui.ksmVaultButton.icon)
+    end
+
     if not ui.ksmRatingText then
-        ui.ksmRatingText = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        ui.ksmRatingText:SetPoint("TOP", ui.ksmVaultIcon, "BOTTOM", 0, -8)
-        ui.ksmRatingText:SetTextColor(1, 1, 1, 1)
+        ui.ksmRatingText = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+        ui.ksmRatingText:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -188)
+        ui.ksmRatingText:SetTextColor(1.0, 0.72, 0.2, 1)
     end
     ui.ksmRatingText:SetText(score and tostring(floor(score + 0.5)) or "—")
-    
-    -- Display owned keystone info below rating
+
+    if not ui.ksmRatingLabel then
+        ui.ksmRatingLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        ui.ksmRatingLabel:SetPoint("BOTTOM", ui.ksmRatingText, "TOP", 0, 4)
+        ui.ksmRatingLabel:SetTextColor(1, 1, 1, 0.95)
+        ui.ksmRatingLabel:SetText("Mythic+ Rating")
+    end
+
     if not ui.ksmKeyInfo then
         ui.ksmKeyInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
         ui.ksmKeyInfo:SetPoint("TOP", ui.ksmRatingText, "BOTTOM", 0, -4)
         ui.ksmKeyInfo:SetTextColor(0.8, 0.8, 0.8, 1)
     end
-    ui.ksmKeyInfo:SetText("Owned Keystone: " .. (keyLevel and string.format("+%d %s", keyLevel, FormatDungeonLabel(keyMapID)) or "Unavailable"))
+    ui.ksmKeyInfo:SetText(keyLevel and string.format("Owned Keystone: +%d %s", keyLevel, FormatDungeonLabel(keyMapID)) or "Owned Keystone: Unavailable")
 
-    -- Display weekly and season best as dungeon icons
-    if not ui.ksmBestLabel then
-        ui.ksmBestLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-        ui.ksmBestLabel:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10, -210)
-        ui.ksmBestLabel:SetText("Best Runs This Season:")
-        ui.ksmBestLabel:SetTextColor(0.8, 0.8, 0.8, 1)
-    end
-
-    -- Create dungeon icon displays for best runs
-    if not ui.ksmBestIcons then
-        ui.ksmBestIcons = {}
-    end
-
-    local bestRuns = {}
-    if seasonBest and seasonBest.mapID then
-        table.insert(bestRuns, seasonBest)
-    end
-    if weekBest and weekBest.mapID and (not seasonBest or weekBest.mapID ~= seasonBest.mapID) then
-        table.insert(bestRuns, weekBest)
-    end
-
-    for index, run in ipairs(bestRuns) do
-        local icon = ui.ksmBestIcons[index]
-        if not icon then
-            icon = CreateFrame("Frame", nil, ui.ksmMainContent)
-            icon:SetSize(48, 48)
-            
-            local texture = icon:CreateTexture(nil, "ARTWORK")
-            texture:SetAllPoints(icon)
-            icon.texture = texture
-            
-            local text = icon:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-            text:SetPoint("BOTTOM", icon, "BOTTOM", 0, -8)
-            text:SetTextColor(1, 1, 1, 1)
-            icon.text = text
-            
-            ui.ksmBestIcons[index] = icon
-        end
-        
-        -- Get dungeon info
-        local dungeonInfo = C_ChallengeMode.GetMapUIInfo(run.mapID)
-        if dungeonInfo then
-            -- Generic dungeon icon for now
-            icon.texture:SetTexture("Interface\\Icons\\inv_crate_01.blp")
-            icon.text:SetText(string.format("+%d", run.level))
-        end
-        
-        icon:ClearAllPoints()
-        icon:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10 + (index - 1) * 60, -230)
-        icon:Show()
-    end
-
-    for index = #bestRuns + 1, #ui.ksmBestIcons do
-        ui.ksmBestIcons[index]:Hide()
-    end
-
-    -- Display vault progress
     if not ui.ksmVaultInfo then
         ui.ksmVaultInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-        ui.ksmVaultInfo:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10, -280)
-        ui.ksmVaultInfo:SetTextColor(0.8, 0.8, 0.8, 1)
+        ui.ksmVaultInfo:SetPoint("TOP", ui.ksmKeyInfo, "BOTTOM", 0, -4)
+        ui.ksmVaultInfo:SetTextColor(0.85, 0.85, 0.85, 1)
     end
     ui.ksmVaultInfo:SetText(GetVaultProgressSummary())
 
-    -- Display portals as icons below
     if not ui.ksmPortalLabel then
-        ui.ksmPortalLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-        ui.ksmPortalLabel:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10, -310)
-        ui.ksmPortalLabel:SetText("Current Season Portals:")
-        ui.ksmPortalLabel:SetTextColor(0.8, 0.8, 0.8, 1)
+        ui.ksmPortalLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        ui.ksmPortalLabel:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -254)
+        ui.ksmPortalLabel:SetTextColor(1, 1, 1, 1)
+        ui.ksmPortalLabel:SetText("Season Best")
     end
 
     local entries = GetCurrentSeasonPortalEntries()
-    local xStart = 10
-    local yStart = -330
-    local ySpacing = 28  -- Larger spacing for icon + text
+    local maxTiles = min(#entries, 8)
+    local tileWidth = 66
+    local tileHeight = 44
+    local tileGap = 4
+    local totalWidth = (maxTiles * tileWidth) + (max(0, maxTiles - 1) * tileGap)
+    local startX = -(totalWidth / 2)
+    local rowY = -276
 
-    for index, entry in ipairs(entries) do
-        local portalFrame = ui.ksmPortalButtons[index]
-        if not portalFrame then
-            portalFrame = CreateFrame("Frame", nil, ui.ksmMainContent)
-            portalFrame:SetSize(200, 24)
-            
-            -- Portal icon
-            local icon = portalFrame:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(20, 20)
-            icon:SetPoint("LEFT", portalFrame, "LEFT", 0, 0)
-            portalFrame.icon = icon
-            
-            -- Portal name text
-            local nameText = portalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-            nameText:SetTextColor(1, 1, 1, 1)
-            portalFrame.nameText = nameText
-            
-            -- Status text (locked/available)
-            local statusText = portalFrame:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-            statusText:SetPoint("RIGHT", portalFrame, "RIGHT", 0, 0)
-            statusText:SetTextColor(0.7, 0.7, 0.7, 1)
-            portalFrame.statusText = statusText
-            
-            ui.ksmPortalButtons[index] = portalFrame
+    for index = 1, maxTiles do
+        local entry = entries[index]
+        local button = ui.ksmPortalButtons[index]
+        if not button then
+            button = CreateFrame("Button", nil, ui.ksmMainContent)
+            button:SetSize(tileWidth, tileHeight)
+
+            local icon = button:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints(button)
+            button.icon = icon
+
+            local dim = button:CreateTexture(nil, "OVERLAY")
+            dim:SetAllPoints(button)
+            dim:SetColorTexture(0, 0, 0, 0.28)
+            button.dim = dim
+
+            local border = button:CreateTexture(nil, "OVERLAY")
+            border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+            border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+            border:SetColorTexture(1, 1, 1, 0.16)
+
+            local levelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            levelText:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -2)
+            levelText:SetTextColor(1.0, 0.72, 0.2, 1)
+            button.levelText = levelText
+
+            button:SetScript("OnClick", function(self)
+                if not self.spellID then
+                    return
+                end
+
+                if not (IsSpellKnown and IsSpellKnown(self.spellID)) then
+                    PrintLocal("Portal is locked for this dungeon")
+                    return
+                end
+
+                if CastSpellByID then
+                    pcall(CastSpellByID, self.spellID)
+                end
+            end)
+
+            button:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:ClearLines()
+                GameTooltip:AddLine(self.mapName or "Dungeon", 1, 1, 1)
+                if self.bestLevel then
+                    GameTooltip:AddLine(string.format("Season Best: +%d", self.bestLevel), 1, 0.82, 0.2)
+                else
+                    GameTooltip:AddLine("Season Best: None", 0.8, 0.8, 0.8)
+                end
+                if self.bestScore then
+                    GameTooltip:AddLine(string.format("Dungeon Score: %d", floor(self.bestScore + 0.5)), 0.8, 0.95, 1)
+                end
+                if self.overallScore then
+                    GameTooltip:AddLine(string.format("Mythic+ Rating: %d", floor(self.overallScore + 0.5)), 0.75, 0.95, 0.75)
+                end
+                GameTooltip:AddLine(self.known and "Click to cast portal" or "Portal locked", self.known and 0.5 or 0.8, self.known and 1 or 0.2, self.known and 0.5 or 0.2)
+                GameTooltip:Show()
+            end)
+            button:SetScript("OnLeave", GameTooltip_Hide)
+
+            ui.ksmPortalButtons[index] = button
         end
 
-        local y = yStart - ((index - 1) * ySpacing)
-        portalFrame:ClearAllPoints()
-        portalFrame:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", xStart, y)
-        
-        -- Get spell icon
-        local spellName, _, spellIcon = C_Spell.GetSpellInfo(entry.spellID)
-        if spellIcon then
-            portalFrame.icon:SetTexture(spellIcon)
-        end
-        
-        portalFrame.nameText:SetText(entry.mapName)
-        portalFrame.statusText:SetText(entry.known and "" or "(locked)")
-        
-        if entry.known then
-            portalFrame.icon:SetDesaturated(false)
-            portalFrame.nameText:SetTextColor(1, 1, 1, 1)
-        else
-            portalFrame.icon:SetDesaturated(true)
-            portalFrame.nameText:SetTextColor(0.6, 0.6, 0.6, 1)
-        end
-        
-        portalFrame:Show()
+        local bestForMap = GetBestSeasonRunForMap(entry.mapID)
+        button.bestLevel = bestForMap and bestForMap.level or nil
+        button.bestScore = bestForMap and bestForMap.score or nil
+        button.overallScore = score
+        button.spellID = entry.spellID
+        button.mapName = entry.mapName
+        button.known = entry.known
+
+        button.icon:SetTexture(GetDungeonTileTexture(entry.mapID, entry.spellID))
+        button.levelText:SetText(bestForMap and tostring(bestForMap.level) or "-")
+        button.dim:SetShown(not entry.known)
+
+        button:ClearAllPoints()
+        button:SetPoint("TOP", ui.ksmMainContent, "TOP", startX + ((index - 1) * (tileWidth + tileGap)) + (tileWidth / 2), rowY)
+        button:Show()
     end
 
-    for index = #entries + 1, #ui.ksmPortalButtons do
+    for index = maxTiles + 1, #ui.ksmPortalButtons do
         ui.ksmPortalButtons[index]:Hide()
     end
 end
@@ -3293,44 +3405,39 @@ local function CreateKSMWindow()
     ui.ksmVaultLine = CreateLine(mainContent, 12)
     ui.ksmVaultLine:SetPoint("TOPLEFT", mainContent, "TOPLEFT", 10, -94)
 
-    -- Centered Open Great Vault button with icon
+    -- Centered Great Vault art button
     local vaultButton = CreateFrame("Button", nil, mainContent)
-    vaultButton:SetSize(200, 32)
-    vaultButton:SetPoint("TOP", mainContent, "TOP", 0, -120)  -- Centered horizontally
-    
-    -- Vault button styling
-    local vaultBg = vaultButton:CreateTexture(nil, "BACKGROUND")
-    vaultBg:SetAllPoints(vaultButton)
-    vaultBg:SetColorTexture(0, 0, 0, 0.6)
-    
-    local vaultBorder = vaultButton:CreateTexture(nil, "BORDER")
-    vaultBorder:SetAllPoints(vaultButton)
-    vaultBorder:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.5)
-    
-    -- Great Vault icon
+    vaultButton:SetSize(104, 104)
+    vaultButton:SetPoint("TOP", mainContent, "TOP", 0, -78)
+
+    local vaultGlow = vaultButton:CreateTexture(nil, "BACKGROUND")
+    vaultGlow:SetPoint("CENTER", vaultButton, "CENTER", 0, 0)
+    vaultGlow:SetSize(150, 150)
+    vaultGlow:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.35)
+
     local vaultIcon = vaultButton:CreateTexture(nil, "ARTWORK")
-    vaultIcon:SetSize(24, 24)
-    vaultIcon:SetPoint("LEFT", vaultButton, "LEFT", 8, 0)
-    vaultIcon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicRelations-Up")  -- Generic vault-like icon
-    
-    -- Vault button text
-    local vaultText = vaultButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    vaultText:SetPoint("LEFT", vaultIcon, "RIGHT", 8, 0)
-    vaultText:SetText("Open Great Vault")
-    vaultText:SetTextColor(1, 1, 1, 1)
-    
+    vaultIcon:SetAllPoints(vaultButton)
+    TrySetGreatVaultTexture(vaultIcon)
+
+    vaultButton.icon = vaultIcon
     vaultButton:SetScript("OnClick", function()
         if not TryOpenGreatVaultUI() then
             PrintLocal("Unable to open Great Vault in this client build")
         end
     end)
-    
     vaultButton:SetScript("OnEnter", function(self)
-        vaultBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+        vaultGlow:SetVertexColor(1, 0.9, 0.5, 0.5)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Open Great Vault", 1, 1, 1)
+        GameTooltip:Show()
     end)
     vaultButton:SetScript("OnLeave", function(self)
-        vaultBg:SetColorTexture(0, 0, 0, 0.6)
+        vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.35)
+        GameTooltip_Hide()
     end)
+
+    ui.ksmVaultButton = vaultButton
 
     ui.ksmPortalsLabel = CreateLine(mainContent, 12)
     ui.ksmPortalsLabel:SetPoint("TOPLEFT", mainContent, "TOPLEFT", 10, -162)
