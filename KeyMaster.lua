@@ -2769,67 +2769,190 @@ local function RefreshKSMMainTab()
     local affixSummary = GetAffixSummary(affixIDs) or "Unavailable"
     local keyMapID, keyLevel = GetOwnedKeystoneSnapshot()
 
-    ui.ksmRatingLine:SetText(string.format("Mythic+ Rating: %s", score and tostring(floor(score + 0.5)) or "Unavailable"))
-    ui.ksmBestLine:SetText(string.format("Best Runs - Week: %s | Season: %s", FormatBestRun(weekBest), FormatBestRun(seasonBest)))
-    ui.ksmAffixLine:SetText(string.format("This Week Affixes: %s", affixSummary))
-    ui.ksmKeyLine:SetText(string.format("Owned Keystone: %s", keyLevel and string.format("+%d %s", keyLevel, FormatDungeonLabel(keyMapID)) or "Unavailable"))
-    ui.ksmVaultLine:SetText(GetVaultProgressSummary())
+    -- Display affixes as circular icons at top
+    if not ui.ksmAffixIcons then
+        ui.ksmAffixIcons = {}
+    end
+    
+    local affixX = 20
+    local affixY = -30
+    if affixIDs then
+        for index, affixID in ipairs(affixIDs) do
+            local affixIcon = ui.ksmAffixIcons[index]
+            if not affixIcon then
+                affixIcon = ui.ksmMainContent:CreateTexture(nil, "ARTWORK")
+                affixIcon:SetSize(32, 32)
+                ui.ksmAffixIcons[index] = affixIcon
+            end
+            
+            local affixName, _, affixTexture = C_Affixes.GetAffixInfo(affixID)
+            if affixTexture then
+                affixIcon:SetTexture(affixTexture)
+            end
+            
+            affixIcon:ClearAllPoints()
+            affixIcon:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", affixX + (index - 1) * 40, affixY)
+            affixIcon:Show()
+        end
+    end
+    
+    for index = (affixIDs and #affixIDs or 0) + 1, #ui.ksmAffixIcons do
+        ui.ksmAffixIcons[index]:Hide()
+    end
+
+    -- Display Great Vault icon in center with Mythic+ rating below
+    if not ui.ksmVaultIcon then
+        ui.ksmVaultIcon = ui.ksmMainContent:CreateTexture(nil, "ARTWORK")
+        ui.ksmVaultIcon:SetSize(64, 64)
+        ui.ksmVaultIcon:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -90)
+        ui.ksmVaultIcon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicRelations-Up")
+    end
+    
+    if not ui.ksmRatingText then
+        ui.ksmRatingText = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        ui.ksmRatingText:SetPoint("TOP", ui.ksmVaultIcon, "BOTTOM", 0, -8)
+        ui.ksmRatingText:SetTextColor(1, 1, 1, 1)
+    end
+    ui.ksmRatingText:SetText(score and tostring(floor(score + 0.5)) or "—")
+    
+    -- Display owned keystone info below rating
+    if not ui.ksmKeyInfo then
+        ui.ksmKeyInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
+        ui.ksmKeyInfo:SetPoint("TOP", ui.ksmRatingText, "BOTTOM", 0, -4)
+        ui.ksmKeyInfo:SetTextColor(0.8, 0.8, 0.8, 1)
+    end
+    ui.ksmKeyInfo:SetText("Owned Keystone: " .. (keyLevel and string.format("+%d %s", keyLevel, FormatDungeonLabel(keyMapID)) or "Unavailable"))
+
+    -- Display weekly and season best as dungeon icons
+    if not ui.ksmBestLabel then
+        ui.ksmBestLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
+        ui.ksmBestLabel:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10, -210)
+        ui.ksmBestLabel:SetText("Best Runs This Season:")
+        ui.ksmBestLabel:SetTextColor(0.8, 0.8, 0.8, 1)
+    end
+
+    -- Create dungeon icon displays for best runs
+    if not ui.ksmBestIcons then
+        ui.ksmBestIcons = {}
+    end
+
+    local bestRuns = {}
+    if seasonBest and seasonBest.mapID then
+        table.insert(bestRuns, seasonBest)
+    end
+    if weekBest and weekBest.mapID and (not seasonBest or weekBest.mapID ~= seasonBest.mapID) then
+        table.insert(bestRuns, weekBest)
+    end
+
+    for index, run in ipairs(bestRuns) do
+        local icon = ui.ksmBestIcons[index]
+        if not icon then
+            icon = CreateFrame("Frame", nil, ui.ksmMainContent)
+            icon:SetSize(48, 48)
+            
+            local texture = icon:CreateTexture(nil, "ARTWORK")
+            texture:SetAllPoints(icon)
+            icon.texture = texture
+            
+            local text = icon:CreateFontString(nil, "OVERLAY", "GameFontSmall")
+            text:SetPoint("BOTTOM", icon, "BOTTOM", 0, -8)
+            text:SetTextColor(1, 1, 1, 1)
+            icon.text = text
+            
+            ui.ksmBestIcons[index] = icon
+        end
+        
+        -- Get dungeon info
+        local dungeonInfo = C_ChallengeMode.GetMapUIInfo(run.mapID)
+        if dungeonInfo then
+            -- Generic dungeon icon for now
+            icon.texture:SetTexture("Interface\\Icons\\inv_crate_01.blp")
+            icon.text:SetText(string.format("+%d", run.level))
+        end
+        
+        icon:ClearAllPoints()
+        icon:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10 + (index - 1) * 60, -230)
+        icon:Show()
+    end
+
+    for index = #bestRuns + 1, #ui.ksmBestIcons do
+        ui.ksmBestIcons[index]:Hide()
+    end
+
+    -- Display vault progress
+    if not ui.ksmVaultInfo then
+        ui.ksmVaultInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
+        ui.ksmVaultInfo:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10, -280)
+        ui.ksmVaultInfo:SetTextColor(0.8, 0.8, 0.8, 1)
+    end
+    ui.ksmVaultInfo:SetText(GetVaultProgressSummary())
+
+    -- Display portals as icons below
+    if not ui.ksmPortalLabel then
+        ui.ksmPortalLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
+        ui.ksmPortalLabel:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", 10, -310)
+        ui.ksmPortalLabel:SetText("Current Season Portals:")
+        ui.ksmPortalLabel:SetTextColor(0.8, 0.8, 0.8, 1)
+    end
 
     local entries = GetCurrentSeasonPortalEntries()
-    local columns = 2
-    local buttonWidth = 275
-    local buttonHeight = 22
     local xStart = 10
-    local yStart = -190
-    local xSpacing = 8
-    local ySpacing = 6
+    local yStart = -330
+    local ySpacing = 28  -- Larger spacing for icon + text
 
     for index, entry in ipairs(entries) do
-        local button = ui.ksmPortalButtons[index]
-        if not button then
-            button = CreateFrame("Button", nil, ui.ksmMainContent, "SecureActionButtonTemplate,UIPanelButtonTemplate")
-            button:SetSize(buttonWidth, buttonHeight)
-            button:SetScript("OnEnter", function(self)
-                if not self.spellID then
-                    return
-                end
-
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetSpellByID(self.spellID)
-                GameTooltip:Show()
-            end)
-            button:SetScript("OnLeave", GameTooltip_Hide)
-            ui.ksmPortalButtons[index] = button
+        local portalFrame = ui.ksmPortalButtons[index]
+        if not portalFrame then
+            portalFrame = CreateFrame("Frame", nil, ui.ksmMainContent)
+            portalFrame:SetSize(200, 24)
+            
+            -- Portal icon
+            local icon = portalFrame:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(20, 20)
+            icon:SetPoint("LEFT", portalFrame, "LEFT", 0, 0)
+            portalFrame.icon = icon
+            
+            -- Portal name text
+            local nameText = portalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+            nameText:SetTextColor(1, 1, 1, 1)
+            portalFrame.nameText = nameText
+            
+            -- Status text (locked/available)
+            local statusText = portalFrame:CreateFontString(nil, "OVERLAY", "GameFontSmall")
+            statusText:SetPoint("RIGHT", portalFrame, "RIGHT", 0, 0)
+            statusText:SetTextColor(0.7, 0.7, 0.7, 1)
+            portalFrame.statusText = statusText
+            
+            ui.ksmPortalButtons[index] = portalFrame
         end
 
-        local column = (index - 1) % columns
-        local row = floor((index - 1) / columns)
-        local x = xStart + (column * (buttonWidth + xSpacing))
-        local y = yStart - (row * (buttonHeight + ySpacing))
-
-        button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", x, y)
-        button:SetText(string.format("%s%s", entry.mapName, entry.known and "" or " (locked)"))
-        button.spellID = entry.spellID
-
+        local y = yStart - ((index - 1) * ySpacing)
+        portalFrame:ClearAllPoints()
+        portalFrame:SetPoint("TOPLEFT", ui.ksmMainContent, "TOPLEFT", xStart, y)
+        
+        -- Get spell icon
+        local spellName, _, spellIcon = C_Spell.GetSpellInfo(entry.spellID)
+        if spellIcon then
+            portalFrame.icon:SetTexture(spellIcon)
+        end
+        
+        portalFrame.nameText:SetText(entry.mapName)
+        portalFrame.statusText:SetText(entry.known and "" or "(locked)")
+        
         if entry.known then
-            button:SetAttribute("type", "spell")
-            button:SetAttribute("spell", entry.spellID)
-            button:Enable()
-            button:SetAlpha(1)
+            portalFrame.icon:SetDesaturated(false)
+            portalFrame.nameText:SetTextColor(1, 1, 1, 1)
         else
-            button:SetAttribute("type", nil)
-            button:SetAttribute("spell", nil)
-            button:Disable()
-            button:SetAlpha(0.65)
+            portalFrame.icon:SetDesaturated(true)
+            portalFrame.nameText:SetTextColor(0.6, 0.6, 0.6, 1)
         end
-
-        button:Show()
+        
+        portalFrame:Show()
     end
 
     for index = #entries + 1, #ui.ksmPortalButtons do
         ui.ksmPortalButtons[index]:Hide()
-    end
 end
 
 local function RefreshKSMPartyTab()
