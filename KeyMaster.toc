@@ -12,4 +12,5 @@ KeyMaster.GuildUtils.lua
 KeyMaster.Sync.lua
 KeyMaster.Chat.lua
 KeyMaster.UI.KSM.lua
+KeyMaster.RunState.lua
 KeyMaster.lua

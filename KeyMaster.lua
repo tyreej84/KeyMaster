@@ -1027,16 +1027,23 @@ local function HandleAddonMessage(prefix, message, channel, sender)
     end
 end
 
-local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
-    if not (C_Timer and C_Timer.After) then
-        ObserveOwnedKeystone(allowAnnounce)
-        return
-    end
+local RunStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
+local BuildRunStateContext
 
-    local delay = type(delaySeconds) == "number" and max(0, delaySeconds) or 0
-    C_Timer.After(delay, function()
-        ObserveOwnedKeystone(allowAnnounce)
-    end)
+local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
+    if RunStateModule and RunStateModule.ScheduleOwnedKeystoneObservation then
+        RunStateModule.ScheduleOwnedKeystoneObservation(BuildRunStateContext(), allowAnnounce, delaySeconds)
+    else
+        if not (C_Timer and C_Timer.After) then
+            ObserveOwnedKeystone(allowAnnounce)
+            return
+        end
+
+        local delay = type(delaySeconds) == "number" and max(0, delaySeconds) or 0
+        C_Timer.After(delay, function()
+            ObserveOwnedKeystone(allowAnnounce)
+        end)
+    end
 end
 
 local function GetMythicPlusScore()
@@ -1377,6 +1384,34 @@ local function BuildChatContext()
         CanReadChatPayload = CanReadChatPayload,
         RequestGuildSnapshots = RequestGuildSnapshots,
         SendOrQueueChatMessage = SendOrQueueChatMessage,
+        RefreshKSMWindowIfVisible = RefreshKSMWindowIfVisible,
+    }
+end
+
+BuildRunStateContext = function()
+    return {
+        ui = ui,
+        max = max,
+        IsChallengeModeRunActive = IsChallengeModeRunActive,
+        IsInMythicDungeonInstance = IsInMythicDungeonInstance,
+        ObserveOwnedKeystone = ObserveOwnedKeystone,
+        GetOwnedKeystoneMapID = GetOwnedKeystoneMapID,
+        GetKeystoneMapName = GetKeystoneMapName,
+        GetChallengeMapTimeLimit = GetChallengeMapTimeLimit,
+        GetWorldElapsedSeconds = GetWorldElapsedSeconds,
+        GetActiveKeystoneDetails = GetActiveKeystoneDetails,
+        GetCriteriaState = GetCriteriaState,
+        GetDeathState = GetDeathState,
+        CalculateChestTimerLimits = CalculateChestTimerLimits,
+        GetAffixSummary = GetAffixSummary,
+        FormatDungeonLabel = FormatDungeonLabel,
+        CopyDeathLog = CopyDeathLog,
+        ResetDeathLog = ResetDeathLog,
+        ResetEnemyForcesCalibration = ResetEnemyForcesCalibration,
+        SyncGroupDeathLogFromUnits = SyncGroupDeathLogFromUnits,
+        RecordGroupDeath = RecordGroupDeath,
+        FlushDeferredChatMessages = FlushDeferredChatMessages,
+        RefreshMythicUI = RefreshMythicUI,
         RefreshKSMWindowIfVisible = RefreshKSMWindowIfVisible,
     }
 end
@@ -1813,165 +1848,22 @@ local function CalculateChestTimerLimits(maxTimeSeconds, affixIDs)
 end
 
 local function GetActiveRunState()
-    if not IsChallengeModeRunActive() then
-        return nil
+    if RunStateModule and RunStateModule.GetActiveRunState then
+        return RunStateModule.GetActiveRunState(BuildRunStateContext())
     end
-
-    local mapID = C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID() or GetOwnedKeystoneMapID()
-    local mapName = GetKeystoneMapName(mapID)
-    local maxTimeSeconds = GetChallengeMapTimeLimit(mapID)
-    local elapsedSeconds = GetWorldElapsedSeconds() or 0
-    local level, affixIDs = GetActiveKeystoneDetails()
-    local objectives, enemyForcesPercent = GetCriteriaState(mapID, mapName)
-    local deathCount, deathPenalty = GetDeathState()
-    local _, _, _, _, _, _, _, instanceMapID = GetInstanceInfo()
-
-    if (not mapName or mapName == "") and instanceMapID then
-        mapName = FormatDungeonLabel(instanceMapID)
-    end
-
-    if not mapName or mapName == "" then
-        local instanceName = GetInstanceInfo()
-        if type(instanceName) == "string" and instanceName ~= "" then
-            mapName = instanceName
-        end
-    end
-
-    local twoChestLimit, threeChestLimit = CalculateChestTimerLimits(maxTimeSeconds, affixIDs)
-
-    return {
-        mapID = mapID,
-        mapName = mapName or "Unknown",
-        level = level,
-        affixIDs = affixIDs,
-        affixSummary = GetAffixSummary(affixIDs),
-        elapsedSeconds = elapsedSeconds,
-        maxTimeSeconds = maxTimeSeconds,
-        timeLeftSeconds = maxTimeSeconds and max(0, maxTimeSeconds - elapsedSeconds) or nil,
-        twoChestLimit = twoChestLimit,
-        threeChestLimit = threeChestLimit,
-        objectives = objectives,
-        enemyForcesPercent = enemyForcesPercent,
-        deathCount = deathCount,
-        deathPenalty = deathPenalty,
-    }
-end
-
-local function GetUpgradeLevels(state)
-    if not state or type(state.elapsedSeconds) ~= "number" or type(state.maxTimeSeconds) ~= "number" then
-        return nil
-    end
-
-    if type(state.threeChestLimit) == "number" and state.elapsedSeconds <= state.threeChestLimit then
-        return 3
-    end
-
-    if type(state.twoChestLimit) == "number" and state.elapsedSeconds <= state.twoChestLimit then
-        return 2
-    end
-
-    if state.elapsedSeconds <= state.maxTimeSeconds then
-        return 1
-    end
-
-    return 0
+    return nil
 end
 
 local function CaptureCompletedRunState()
-    local source = ui.lastRunState or GetActiveRunState()
-    if not source then
-        return
+    if RunStateModule and RunStateModule.CaptureCompletedRunState then
+        RunStateModule.CaptureCompletedRunState(BuildRunStateContext())
     end
-
-    local completionMapID
-    local completionLevel
-    local completionTimeMs
-    local completionOnTime
-    local completionUpgradeLevels
-
-    if C_ChallengeMode and C_ChallengeMode.GetCompletionInfo then
-        local ok, mapChallengeModeID, level, time, onTime, keystoneUpgradeLevels = pcall(C_ChallengeMode.GetCompletionInfo)
-        if ok then
-            completionMapID = mapChallengeModeID
-            completionLevel = level
-            completionTimeMs = time
-            completionOnTime = onTime
-            completionUpgradeLevels = keystoneUpgradeLevels
-        end
-    end
-
-    local completionElapsedSeconds = source.elapsedSeconds
-    if type(completionTimeMs) == "number" and completionTimeMs > 0 then
-        completionElapsedSeconds = completionTimeMs / 1000
-    end
-
-    local completionMaxTimeSeconds = source.maxTimeSeconds
-    local completionTimeLeftSeconds = source.timeLeftSeconds
-    if type(completionElapsedSeconds) == "number" and type(completionMaxTimeSeconds) == "number" then
-        completionTimeLeftSeconds = completionMaxTimeSeconds - completionElapsedSeconds
-    end
-
-    local upgradeLevels = completionUpgradeLevels
-    if type(upgradeLevels) ~= "number" then
-        local upgradedSource = {
-            elapsedSeconds = completionElapsedSeconds,
-            maxTimeSeconds = completionMaxTimeSeconds,
-            twoChestLimit = source.twoChestLimit,
-            threeChestLimit = source.threeChestLimit,
-        }
-        upgradeLevels = GetUpgradeLevels(upgradedSource)
-    elseif completionOnTime == false and upgradeLevels <= 0 then
-        upgradeLevels = 0
-    end
-
-    local resultText
-    if upgradeLevels == 3 then
-        resultText = "Result: +3"
-    elseif upgradeLevels == 2 then
-        resultText = "Result: +2"
-    elseif upgradeLevels == 1 then
-        resultText = "Result: +1"
-    elseif upgradeLevels == 0 then
-        resultText = "Result: Depleted"
-    else
-        resultText = "Result: Completed"
-    end
-
-    ui.completedRun = {
-        completedAt = GetTime(),
-        mapName = GetKeystoneMapName(completionMapID) or source.mapName,
-        level = completionLevel or source.level,
-        affixSummary = source.affixSummary,
-        elapsedSeconds = completionElapsedSeconds,
-        maxTimeSeconds = completionMaxTimeSeconds,
-        timeLeftSeconds = completionTimeLeftSeconds,
-        twoChestLimit = source.twoChestLimit,
-        threeChestLimit = source.threeChestLimit,
-        deathCount = source.deathCount,
-        deathPenalty = source.deathPenalty,
-        deathLog = CopyDeathLog(ui.deathLog),
-        resultText = resultText,
-    }
 end
 
 local function RefreshCompletedRunTimingFromAPI()
-    if not (ui.completedRun and C_ChallengeMode and C_ChallengeMode.GetCompletionInfo) then
-        return
+    if RunStateModule and RunStateModule.RefreshCompletedRunTimingFromAPI then
+        RunStateModule.RefreshCompletedRunTimingFromAPI(BuildRunStateContext())
     end
-
-    local ok, _, _, completionTimeMs = pcall(C_ChallengeMode.GetCompletionInfo)
-    if not ok or type(completionTimeMs) ~= "number" or completionTimeMs <= 0 then
-        return
-    end
-
-    local elapsedSeconds = completionTimeMs / 1000
-    ui.completedRun.elapsedSeconds = elapsedSeconds
-
-    if type(ui.completedRun.maxTimeSeconds) == "number" then
-        ui.completedRun.timeLeftSeconds = ui.completedRun.maxTimeSeconds - elapsedSeconds
-    end
-
-    RefreshMythicUI()
 end
 
 local function CreateLine(parent, fontHeight)
@@ -4126,75 +4018,23 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
-    -- Challenge mode event tracking - these fire immediately on entering/leaving M+
-    if event == "CHALLENGE_MODE_START" then
-        ui.inChallengeMode = true
-        ui.completedRun = nil
-        ui.lastRunState = nil
-        ResetDeathLog()
-        ResetEnemyForcesCalibration()
-        ObserveOwnedKeystone(false)
-        SyncGroupDeathLogFromUnits()
-        RefreshMythicUI()
+    if RunStateModule and RunStateModule.HandleChallengeLifecycleEvent
+        and RunStateModule.HandleChallengeLifecycleEvent(BuildRunStateContext(), event) then
         return
     end
 
-    if event == "CHALLENGE_MODE_COMPLETED" then
-        SyncGroupDeathLogFromUnits()
-        CaptureCompletedRunState()
-        ui.inChallengeMode = false
-        -- Check shortly after completion so the rerolled key can be observed.
-        ScheduleOwnedKeystoneObservation(true, 3)
-        if C_Timer and C_Timer.After then
-            C_Timer.After(2, RefreshCompletedRunTimingFromAPI)
-        end
-        RefreshMythicUI()
+    if RunStateModule and RunStateModule.HandleCombatLogEvent
+        and RunStateModule.HandleCombatLogEvent(BuildRunStateContext(), event) then
         return
     end
 
-    if event == "CHALLENGE_MODE_RESET" then
-        ui.inChallengeMode = false
-        ui.lastRunState = nil
-        ui.completedRun = nil
-        ResetDeathLog()
-        ResetEnemyForcesCalibration()
-        ScheduleOwnedKeystoneObservation(true, 1)
-        RefreshMythicUI()
+    if RunStateModule and RunStateModule.HandleGroupStateEvent
+        and RunStateModule.HandleGroupStateEvent(BuildRunStateContext(), event) then
         return
     end
 
-    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        local _, subEvent, _, _, _, _, _, destGUID, destName, destFlags = CombatLogGetCurrentEventInfo()
-        if subEvent == "UNIT_DIED" then
-            RecordGroupDeath(destGUID, destName, destFlags)
-        end
-        return
-    end
-
-    if event == "GROUP_ROSTER_UPDATE" or event == "UNIT_FLAGS" or event == "PLAYER_DEAD" then
-        SyncGroupDeathLogFromUnits()
-        RefreshKSMWindowIfVisible()
-        return
-    end
-
-    if event == "PLAYER_ENTERING_WORLD"
-        or event == "PLAYER_REGEN_ENABLED"
-        or event == "SCENARIO_CRITERIA_UPDATE" then
-        if event == "PLAYER_ENTERING_WORLD" and not IsInMythicDungeonInstance() then
-            ui.completedRun = nil
-            ui.lastRunState = nil
-            ui.inChallengeMode = false
-            ResetEnemyForcesCalibration()
-        end
-        if event == "PLAYER_ENTERING_WORLD" then
-            ScheduleOwnedKeystoneObservation(false, 1)
-        end
-        if event == "PLAYER_REGEN_ENABLED" then
-            FlushDeferredChatMessages()
-        end
-        SyncGroupDeathLogFromUnits()
-        RefreshMythicUI()
-        RefreshKSMWindowIfVisible()
+    if RunStateModule and RunStateModule.HandleRunRefreshEvent
+        and RunStateModule.HandleRunRefreshEvent(BuildRunStateContext(), event) then
         return
     end
 
