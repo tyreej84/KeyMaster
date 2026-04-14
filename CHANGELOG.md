@@ -37,6 +37,7 @@ All notable changes to this project will be documented in this file.
 - Updated `!keys` reply building to fall back to owned snapshot text (`+level dungeon`) when hyperlink creation is unavailable, preventing false "Keystone unavailable" replies.
 - Fixed portal click-casting reliability in `/ksm` Main/Party/Guild views by using a shared known-spell check (`IsSpellKnownOrOverridesKnown`/`IsPlayerSpell`) and robust cast fallback path.
 - Replaced direct portal cast calls with secure spell action-button bindings in Main/Party/Guild portal buttons to resolve BugGrabber `ADDON_ACTION_FORBIDDEN` protected-call errors.
+- Removed legacy direct-cast behavior from the old portal helper so stale call paths cannot invoke protected cast APIs.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.

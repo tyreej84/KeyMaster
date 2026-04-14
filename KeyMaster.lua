@@ -2662,24 +2662,9 @@ local function IsPortalSpellKnown(spellID)
 end
 
 local function TryCastPortalSpell(spellID)
-    if not IsPortalSpellKnown(spellID) then
-        return false
-    end
-
-    if C_Spell and C_Spell.CastSpell then
-        local ok = pcall(C_Spell.CastSpell, spellID)
-        if ok then
-            return true
-        end
-    end
-
-    if CastSpellByID then
-        local ok = pcall(CastSpellByID, spellID)
-        if ok then
-            return true
-        end
-    end
-
+    -- Deprecated on purpose: portal casts are bound through SecureActionButtonTemplate.
+    -- Keeping this function as a non-casting guard avoids accidental protected calls.
+    local _ = spellID
     return false
 end
 
