@@ -7,6 +7,24 @@ end
 local KSM = {}
 ns.KSM = KSM
 
+local function ResolveBestKnownScore(tryScoreFn, ...)
+    if type(tryScoreFn) ~= "function" then
+        return nil
+    end
+
+    for i = 1, select("#", ...) do
+        local identifier = select(i, ...)
+        if identifier and identifier ~= "" then
+            local score = tryScoreFn(identifier)
+            if type(score) == "number" and score > 0 then
+                return score
+            end
+        end
+    end
+
+    return nil
+end
+
 function KSM.SetActiveTab(ctx, tabName)
     local ui = ctx.ui
     if not ui or not ui.ksmFrame then
@@ -509,6 +527,9 @@ function KSM.RefreshPartyTab(ctx)
             if (not score or score <= 0) and unitToken ~= "player" then
                 local cache = GetGuildMemberData(name)
                 score = cache and tonumber(cache.rating) or nil
+                if not score or score <= 0 then
+                    score = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, name)
+                end
             end
 
             mapID = tonumber(mapID) or 0
@@ -677,8 +698,8 @@ function KSM.RefreshGuildTab(ctx)
             local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
             local rating = isPlayer and playerScore or cache.rating
 
-            if (not rating or rating <= 0) and guid then
-                local apiScore = TryGetMythicScoreForIdentifier(guid)
+            if not rating or rating <= 0 then
+                local apiScore = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, guid, fullName, name)
                 if apiScore then
                     rating = floor(apiScore + 0.5)
                 end
@@ -719,8 +740,8 @@ function KSM.RefreshGuildTab(ctx)
             local normalizedKeyLevel = tonumber(keyLevel) or 0
             local normalizedRating = tonumber(rating) or 0
 
-            if (not normalizedRating or normalizedRating <= 0) and roster and roster.guid then
-                local apiScore = TryGetMythicScoreForIdentifier(roster.guid)
+            if not normalizedRating or normalizedRating <= 0 then
+                local apiScore = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, roster and roster.guid, normalized)
                 if apiScore then
                     normalizedRating = floor(apiScore + 0.5)
                 end
