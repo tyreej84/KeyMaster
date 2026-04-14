@@ -14,7 +14,9 @@ local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
+C_Timer.After(0, function()
+    frame:RegisterEvent("ADDON_LOADED")
+end)
 
 local RUNTIME_EVENTS = {
     "PLAYER_LOGIN",
@@ -50,7 +52,7 @@ local function RegisterRuntimeEvents()
     end
 end
 
-local REPLY_PREFIX = "KeyMaster:"
+local REPLY_PREFIX = "KeyStoneMaster:"
 local KEYSTONE_ITEM_IDS = { [180653] = true, [158923] = true, [151086] = true }
 local KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
 local KEYS_TEXT_COMMAND = "!keys"

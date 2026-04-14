@@ -2,11 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.8] - 2026-04-13
+
+### Changed
+- Renamed addon from **KeyMaster** to **KeyStone Master**
+- Updated chat reply prefix to `KeyStoneMaster:`
+
+### Fixed
+- Fixed protected function call error with frame event registration
+
+### Packaging
+- Built release archive at `Releases/1.6.8/KeyMaster.zip`.
+
 ## [1.6.7] - 2026-04-11
 
 ### Fixed
 - Stopped registering the full event list in the main chunk, which was still triggering protected `Frame:RegisterEvent()` forbidden errors in fresh BugGrabber captures.
 - Kept only `ADDON_LOADED` registration at file load and moved runtime event registration into addon `ADDON_LOADED` handling with one-time guarding.
+
+### Notes
+- Addon name changed to **KeyStone Master**
 
 ### Packaging
 - Built release archive at `Releases/1.6.7/KeyMaster.zip`.
