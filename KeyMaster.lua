@@ -875,6 +875,12 @@ local function BuildKeystoneReply()
         return string.format("%s %s", REPLY_PREFIX, keyLink)
     end
 
+    local mapID, keyLevel = GetOwnedKeystoneSnapshot()
+    if type(keyLevel) == "number" and keyLevel > 0 then
+        local dungeonLabel = (type(mapID) == "number" and mapID > 0 and FormatDungeonLabel(mapID)) or "Unknown Dungeon"
+        return string.format("%s +%d %s", REPLY_PREFIX, keyLevel, dungeonLabel)
+    end
+
     return string.format("%s Keystone unavailable", REPLY_PREFIX)
 end
 

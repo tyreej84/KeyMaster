@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 - Added AstralKeys plaintext chat parsing for messages like `Astral Keys: [Dungeon (12)]` so guild tab rows are created from those links.
 - Expanded generic guild chat keystone parsing to capture additional addon/user-facing formats (including `(+12)` and `+12` variants) so addon responders reliably populate `/ksm guild`.
 - Added fail-safe guild command replies so `!keys`/`!score`/`!best` still respond with fallback text when runtime command parsing or reply generation returns nil.
+- Updated `!keys` reply building to fall back to owned snapshot text (`+level dungeon`) when hyperlink creation is unavailable, preventing false "Keystone unavailable" replies.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.
