@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
   - `KeyMaster.Data.lua`
 - Split reusable parsing/formatting/request helpers into `KeyMaster.Utils.lua`.
 - Split guild safety/recent-activity helpers into `KeyMaster.GuildUtils.lua`.
+- Split addon sync/external key-ingestion pipeline into `KeyMaster.Sync.lua`.
 - Extracted `/ksm` tab refresh logic into `KeyMaster.UI.KSM.lua` to keep `KeyMaster.lua` focused on orchestration.
 - Updated TOC load order so shared modules load before `KeyMaster.lua`.
 
