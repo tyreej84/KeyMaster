@@ -2953,6 +2953,7 @@ local function RefreshKSMMainTab()
 
     for index = #entries + 1, #ui.ksmPortalButtons do
         ui.ksmPortalButtons[index]:Hide()
+    end
 end
 
 local function RefreshKSMPartyTab()
