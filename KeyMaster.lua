@@ -14,9 +14,8 @@ local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 
 local frame = CreateFrame("Frame")
-C_Timer.After(0, function()
-    frame:RegisterEvent("ADDON_LOADED")
-end)
+frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
 
 local RUNTIME_EVENTS = {
     "PLAYER_LOGIN",
@@ -2588,6 +2587,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
+        -- Safety bootstrap in case ADDON_LOADED fired before registration.
+        RegisterRuntimeEvents()
+        InitializeDatabase()
         PerformLoginInitialization()
         return
     end
