@@ -2634,6 +2634,55 @@ local function GetPortalSpellIDForMap(mapID)
     return KSM_PORTAL_SPELL_IDS[mapID]
 end
 
+local function IsPortalSpellKnown(spellID)
+    if type(spellID) ~= "number" or spellID <= 0 then
+        return false
+    end
+
+    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellID) then
+        return true
+    end
+
+    if IsSpellKnown and IsSpellKnown(spellID) then
+        return true
+    end
+
+    if IsPlayerSpell and IsPlayerSpell(spellID) then
+        return true
+    end
+
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
+        if ok and known then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function TryCastPortalSpell(spellID)
+    if not IsPortalSpellKnown(spellID) then
+        return false
+    end
+
+    if C_Spell and C_Spell.CastSpell then
+        local ok = pcall(C_Spell.CastSpell, spellID)
+        if ok then
+            return true
+        end
+    end
+
+    if CastSpellByID then
+        local ok = pcall(CastSpellByID, spellID)
+        if ok then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function GetCurrentSeasonPortalEntries()
     local entries = {}
     local addedByMapID = {}
@@ -2650,7 +2699,7 @@ local function GetCurrentSeasonPortalEntries()
             mapID = mapID,
             mapName = FormatDungeonLabel(mapID),
             spellID = spellID,
-            known = spellID and IsSpellKnown and IsSpellKnown(spellID) == true,
+            known = spellID and IsPortalSpellKnown(spellID) == true,
         })
     end
 
@@ -3202,13 +3251,13 @@ local function EnsureKSMGuildRow(index)
             return
         end
 
-        if not (IsSpellKnown and IsSpellKnown(self.spellID)) then
+        if not IsPortalSpellKnown(self.spellID) then
             PrintLocal("You do not know this portal")
             return
         end
 
-        if CastSpellByID then
-            pcall(CastSpellByID, self.spellID)
+        if not TryCastPortalSpell(self.spellID) then
+            PrintLocal("Portal cast failed")
         end
     end)
 
@@ -3304,13 +3353,13 @@ local function EnsureKSMPartyRow(index)
             return
         end
 
-        if not (IsSpellKnown and IsSpellKnown(self.spellID)) then
+        if not IsPortalSpellKnown(self.spellID) then
             PrintLocal("You do not know this portal")
             return
         end
 
-        if CastSpellByID then
-            pcall(CastSpellByID, self.spellID)
+        if not TryCastPortalSpell(self.spellID) then
+            PrintLocal("Portal cast failed")
         end
     end)
 
@@ -3324,7 +3373,7 @@ local function EnsureKSMPartyRow(index)
             GameTooltip:AddLine("Weekly Key: None", 0.8, 0.8, 0.8)
         end
         if self.spellID then
-            GameTooltip:AddLine(IsSpellKnown and IsSpellKnown(self.spellID) and "Click to cast portal" or "Portal not learned", 0.7, 0.82, 1)
+            GameTooltip:AddLine(IsPortalSpellKnown(self.spellID) and "Click to cast portal" or "Portal not learned", 0.7, 0.82, 1)
         end
         GameTooltip:Show()
     end)
@@ -3360,6 +3409,8 @@ local function BuildKSMContext()
         FormatDungeonLabel = FormatDungeonLabel,
         GetDungeonTileTexture = GetDungeonTileTexture,
         PrintLocal = PrintLocal,
+        IsPortalSpellKnown = IsPortalSpellKnown,
+        TryCastPortalSpell = TryCastPortalSpell,
         TryGetUnitMythicScore = TryGetUnitMythicScore,
         GetGuildMemberData = GetGuildMemberData,
         GetPlayerClassFile = GetPlayerClassFile,

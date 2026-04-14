@@ -107,6 +107,8 @@ function KSM.RefreshMainTab(ctx)
     local FormatDungeonLabel = ctx.FormatDungeonLabel
     local GetDungeonTileTexture = ctx.GetDungeonTileTexture
     local PrintLocal = ctx.PrintLocal
+    local IsPortalSpellKnown = ctx.IsPortalSpellKnown
+    local TryCastPortalSpell = ctx.TryCastPortalSpell
 
     local weeklyPanel = ui.ksmWeeklyPanel or ui.ksmMainContent
     local seasonPanel = ui.ksmSeasonPanel or ui.ksmMainContent
@@ -419,13 +421,13 @@ function KSM.RefreshMainTab(ctx)
                     return
                 end
 
-                if not (IsSpellKnown and IsSpellKnown(self.spellID)) then
+                if not (IsPortalSpellKnown and IsPortalSpellKnown(self.spellID)) then
                     PrintLocal("Portal is locked for this dungeon")
                     return
                 end
 
-                if CastSpellByID then
-                    pcall(CastSpellByID, self.spellID)
+                if not (TryCastPortalSpell and TryCastPortalSpell(self.spellID)) then
+                    PrintLocal("Portal cast failed")
                 end
             end)
 
@@ -641,6 +643,7 @@ function KSM.RefreshGuildTab(ctx)
     local GetClassColorInfo = ctx.GetClassColorInfo
     local ApplyClassIcon = ctx.ApplyClassIcon
     local FormatDungeonLabel = ctx.FormatDungeonLabel
+    local IsPortalSpellKnown = ctx.IsPortalSpellKnown
 
     if ui.ksmGuildHideOfflineCheck then
         ui.ksmGuildHideOfflineCheck:SetChecked(ui.ksmHideOffline == true)
@@ -874,7 +877,8 @@ function KSM.RefreshGuildTab(ctx)
             row.teleportButton.spellID = entry.spellID
             row.teleportButton:Show()
             row.teleportButton.label:SetText("Teleport")
-            row.teleportButton.label:SetTextColor(IsSpellKnown and IsSpellKnown(entry.spellID) and 1 or 0.55, IsSpellKnown and IsSpellKnown(entry.spellID) and 1 or 0.55, IsSpellKnown and IsSpellKnown(entry.spellID) and 1 or 0.55, 1)
+            local known = IsPortalSpellKnown and IsPortalSpellKnown(entry.spellID)
+            row.teleportButton.label:SetTextColor(known and 1 or 0.55, known and 1 or 0.55, known and 1 or 0.55, 1)
         else
             row.teleportButton.spellID = nil
             row.teleportButton:Hide()
