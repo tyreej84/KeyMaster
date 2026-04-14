@@ -2893,7 +2893,7 @@ local function RefreshKSMGuildTab()
     end
 
     local entries = {}
-    if IsInGuild and IsInGuild() and GuildRoster and GetNumGuildMembers then
+    if IsInGuild() and GuildRoster and GetNumGuildMembers then
         GuildRoster()
         local playerName = UnitName("player")
         local score = GetMythicPlusScore()
@@ -3030,16 +3030,62 @@ local function CreateKSMWindow()
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
 
     local function CreateTabButton(text, xOffset)
-        local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        button:SetSize(120, 22)
-        button:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", xOffset, 8)  -- Centered at bottom
-        button:SetText(text)
-        -- Make button blue
-        button:SetNormalFontObject(GameFontNormal)
-        local normalTexture = button:GetNormalTexture()
-        if normalTexture then
-            normalTexture:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.6)
-        end
+        local button = CreateFrame("Button", nil, frame)
+        button:SetSize(120, 24)
+        button:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", xOffset, 8)
+        
+        -- Black background with white border and blue tint
+        local bg = button:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(button)
+        bg:SetColorTexture(0, 0, 0, 0.8)  -- Black background
+        
+        -- White border
+        local border = button:CreateTexture(nil, "BORDER")
+        border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+        border:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
+        border:SetHeight(1)
+        border:SetColorTexture(1, 1, 1, 0.3)
+        
+        local borderBottom = button:CreateTexture(nil, "BORDER")
+        borderBottom:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+        borderBottom:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+        borderBottom:SetHeight(1)
+        borderBottom:SetColorTexture(1, 1, 1, 0.3)
+        
+        local borderLeft = button:CreateTexture(nil, "BORDER")
+        borderLeft:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+        borderLeft:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+        borderLeft:SetWidth(1)
+        borderLeft:SetColorTexture(1, 1, 1, 0.3)
+        
+        local borderRight = button:CreateTexture(nil, "BORDER")
+        borderRight:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
+        borderRight:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+        borderRight:SetWidth(1)
+        borderRight:SetColorTexture(1, 1, 1, 0.3)
+        
+        -- Blue accent (top border)
+        local blueAccent = button:CreateTexture(nil, "OVERLAY")
+        blueAccent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+        blueAccent:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
+        blueAccent:SetHeight(2)
+        blueAccent:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], BREAK_TIMER_BLUE[4])
+        
+        -- White text with blue hue
+        local fontString = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        fontString:SetAllPoints(button)
+        fontString:SetText(text)
+        fontString:SetTextColor(1, 1, 1, 1)  -- White text
+        fontString:SetJustifyH("CENTER")
+        fontString:SetJustifyV("MIDDLE")
+        
+        button:SetScript("OnEnter", function(self)
+            bg:SetColorTexture(0.1, 0.1, 0.1, 0.9)  -- Slightly lighter on hover
+        end)
+        button:SetScript("OnLeave", function(self)
+            bg:SetColorTexture(0, 0, 0, 0.8)  -- Back to black
+        end)
+        
         return button
     end
 
@@ -3078,14 +3124,43 @@ local function CreateKSMWindow()
     ui.ksmVaultLine = CreateLine(mainContent, 12)
     ui.ksmVaultLine:SetPoint("TOPLEFT", mainContent, "TOPLEFT", 10, -94)
 
-    local vaultButton = CreateFrame("Button", nil, mainContent, "UIPanelButtonTemplate")
-    vaultButton:SetSize(170, 22)
-    vaultButton:SetPoint("TOPLEFT", mainContent, "TOPLEFT", 10, -120)
-    vaultButton:SetText("Open Great Vault")
+    -- Centered Open Great Vault button with icon
+    local vaultButton = CreateFrame("Button", nil, mainContent)
+    vaultButton:SetSize(200, 32)
+    vaultButton:SetPoint("TOP", mainContent, "TOP", 0, -120)  -- Centered horizontally
+    
+    -- Vault button styling
+    local vaultBg = vaultButton:CreateTexture(nil, "BACKGROUND")
+    vaultBg:SetAllPoints(vaultButton)
+    vaultBg:SetColorTexture(0, 0, 0, 0.6)
+    
+    local vaultBorder = vaultButton:CreateTexture(nil, "BORDER")
+    vaultBorder:SetAllPoints(vaultButton)
+    vaultBorder:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.5)
+    
+    -- Great Vault icon
+    local vaultIcon = vaultButton:CreateTexture(nil, "ARTWORK")
+    vaultIcon:SetSize(24, 24)
+    vaultIcon:SetPoint("LEFT", vaultButton, "LEFT", 8, 0)
+    vaultIcon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicRelations-Up")  -- Generic vault-like icon
+    
+    -- Vault button text
+    local vaultText = vaultButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    vaultText:SetPoint("LEFT", vaultIcon, "RIGHT", 8, 0)
+    vaultText:SetText("Open Great Vault")
+    vaultText:SetTextColor(1, 1, 1, 1)
+    
     vaultButton:SetScript("OnClick", function()
         if not TryOpenGreatVaultUI() then
             PrintLocal("Unable to open Great Vault in this client build")
         end
+    end)
+    
+    vaultButton:SetScript("OnEnter", function(self)
+        vaultBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+    end)
+    vaultButton:SetScript("OnLeave", function(self)
+        vaultBg:SetColorTexture(0, 0, 0, 0.6)
     end)
 
     ui.ksmPortalsLabel = CreateLine(mainContent, 12)
