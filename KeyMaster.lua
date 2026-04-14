@@ -1554,7 +1554,24 @@ local function HandleChatMessage(event, message, sender)
 
     UpdateGuildMemberFromChatKeystoneLink(message, sender)
 
-    local command = ExtractRequestCommand(message)
+    local command = ExtractRequestCommand and ExtractRequestCommand(message) or nil
+    if not command and type(message) == "string" then
+        -- Fallback parser keeps command replies working even if module parser is unavailable.
+        local normalized = strtrim(strlower(message))
+            :gsub("|c%x%x%x%x%x%x%x%x", "")
+            :gsub("|r", "")
+        local parsed = normalized:match("^(![%a]+)") or normalized:match("%s(![%a]+)")
+        if type(parsed) == "string" then
+            parsed = parsed:gsub("[,%.%?!;:]+$", "")
+            if parsed == KEY_TEXT_COMMAND
+                or parsed == KEYS_TEXT_COMMAND
+                or parsed == SCORE_TEXT_COMMAND
+                or parsed == SCORES_TEXT_COMMAND
+                or parsed == BEST_TEXT_COMMAND then
+                command = parsed
+            end
+        end
+    end
     if not command then
         RefreshKSMWindowIfVisible()
         return

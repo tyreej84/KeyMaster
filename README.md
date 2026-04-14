@@ -19,6 +19,7 @@ A Mythic+ utility addon for World of Warcraft with chat replies and a live dunge
 | `!score` | Your current Mythic+ score |
 | `!best` | Your best key this week and this season |
 | `/km` or `/keymaster` | Show addon status and UI command help |
+| `/ksm` | Open the KeyStoneMastery tabbed dashboard |
 | `/km settings` | Open the KeyStoneMastery settings panel |
 | `/km status` | Show current KeyStoneMastery UI state (enabled, hidden, locked, scale, anchor) |
 | `/km ui on` | Enable the KeyStoneMastery Mythic+ overlay |
@@ -33,6 +34,24 @@ A Mythic+ utility addon for World of Warcraft with chat replies and a live dunge
 | `/km deaths` | Print per-player death summary for current/recent run |
 | `/km criteria` | Print scenario criteria debug details |
 | `/km forces` | Print Enemy Forces debug details |
+
+## /ksm Dashboard
+
+The `/ksm` command opens the tabbed KeyStoneMastery dashboard.
+
+- `Main` tab: weekly/season summary, affixes, rating, vault progress, and season portals.
+- `Party` tab: party member key snapshot, dungeon tile, and Mythic+ score.
+- `Guild` tab: guild key list with pagination, online filtering, and manual key-request action.
+
+Available `/ksm` commands:
+
+- `/ksm` or `/ksm toggle`: show/hide the dashboard.
+- `/ksm show`: show dashboard.
+- `/ksm hide`: hide dashboard.
+- `/ksm main`: switch to `Main` tab.
+- `/ksm party`: switch to `Party` tab.
+- `/ksm guild`: switch to `Guild` tab.
+- `/ksm refresh`: refresh currently visible dashboard data.
 
 ## Install
 
