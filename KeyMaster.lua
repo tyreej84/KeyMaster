@@ -1355,6 +1355,40 @@ local function GetAffixSummary(affixIDs)
     return table.concat(names, " - ")
 end
 
+local function GetAffixDisplayInfo(affixID)
+    if type(affixID) ~= "number" then
+        return nil, nil, nil
+    end
+
+    if C_Affixes and C_Affixes.GetAffixInfo then
+        local ok, result1, result2, result3 = pcall(C_Affixes.GetAffixInfo, affixID)
+        if ok then
+            if type(result1) == "table" then
+                local info = result1
+                return info.name or info.displayName, info.description, info.icon or info.fileDataID
+            end
+
+            if type(result1) == "string" or type(result3) == "number" or type(result3) == "string" then
+                return result1, result2, result3
+            end
+        end
+    end
+
+    if C_ChallengeMode and C_ChallengeMode.GetAffixInfo then
+        local ok, result1, result2, result3, result4 = pcall(C_ChallengeMode.GetAffixInfo, affixID)
+        if ok then
+            local name = type(result1) == "string" and result1 or type(result2) == "string" and result2 or nil
+            local description = type(result2) == "string" and result2 ~= name and result2 or type(result3) == "string" and result3 or nil
+            local icon = (type(result3) == "number" or type(result3) == "string") and result3
+                or (type(result4) == "number" or type(result4) == "string") and result4
+                or nil
+            return name, description, icon
+        end
+    end
+
+    return nil, nil, nil
+end
+
 local function GetWorldElapsedSeconds()
     if not GetWorldElapsedTime then
         return nil
@@ -2742,14 +2776,23 @@ local function SetKSMActiveTab(tabName)
     if ui.ksmPartyContent then ui.ksmPartyContent:SetShown(showParty) end
     if ui.ksmGuildContent then ui.ksmGuildContent:SetShown(showGuild) end
 
-    if ui.ksmMainTab and ui.ksmMainTab.GetFontString then
-        ui.ksmMainTab:GetFontString():SetTextColor(showMain and 1 or 0.85, showMain and 1 or 0.85, showMain and 1 or 0.85, 1)
+    if ui.ksmMainTab then
+        local mainLabel = ui.ksmMainTab.label or (ui.ksmMainTab.GetFontString and ui.ksmMainTab:GetFontString())
+        if mainLabel then
+            mainLabel:SetTextColor(showMain and 1 or 0.85, showMain and 1 or 0.85, showMain and 1 or 0.85, 1)
+        end
     end
-    if ui.ksmPartyTab and ui.ksmPartyTab.GetFontString then
-        ui.ksmPartyTab:GetFontString():SetTextColor(showParty and 1 or 0.85, showParty and 1 or 0.85, showParty and 1 or 0.85, 1)
+    if ui.ksmPartyTab then
+        local partyLabel = ui.ksmPartyTab.label or (ui.ksmPartyTab.GetFontString and ui.ksmPartyTab:GetFontString())
+        if partyLabel then
+            partyLabel:SetTextColor(showParty and 1 or 0.85, showParty and 1 or 0.85, showParty and 1 or 0.85, 1)
+        end
     end
-    if ui.ksmGuildTab and ui.ksmGuildTab.GetFontString then
-        ui.ksmGuildTab:GetFontString():SetTextColor(showGuild and 1 or 0.85, showGuild and 1 or 0.85, showGuild and 1 or 0.85, 1)
+    if ui.ksmGuildTab then
+        local guildLabel = ui.ksmGuildTab.label or (ui.ksmGuildTab.GetFontString and ui.ksmGuildTab:GetFontString())
+        if guildLabel then
+            guildLabel:SetTextColor(showGuild and 1 or 0.85, showGuild and 1 or 0.85, showGuild and 1 or 0.85, 1)
+        end
     end
 end
 
@@ -2766,7 +2809,6 @@ local function RefreshKSMMainTab()
     end
 
     local _, affixIDs = GetActiveKeystoneDetails()
-    local affixSummary = GetAffixSummary(affixIDs) or "Unavailable"
     local keyMapID, keyLevel = GetOwnedKeystoneSnapshot()
 
     -- Display affixes as circular icons at top
@@ -2785,9 +2827,11 @@ local function RefreshKSMMainTab()
                 ui.ksmAffixIcons[index] = affixIcon
             end
             
-            local affixName, _, affixTexture = C_Affixes.GetAffixInfo(affixID)
+            local _, _, affixTexture = GetAffixDisplayInfo(affixID)
             if affixTexture then
                 affixIcon:SetTexture(affixTexture)
+            else
+                affixIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
             end
             
             affixIcon:ClearAllPoints()
@@ -3202,6 +3246,7 @@ local function CreateKSMWindow()
         fontString:SetTextColor(1, 1, 1, 1)  -- White text
         fontString:SetJustifyH("CENTER")
         fontString:SetJustifyV("MIDDLE")
+        button.label = fontString
         
         button:SetScript("OnEnter", function(self)
             bg:SetColorTexture(0.1, 0.1, 0.1, 0.9)  -- Slightly lighter on hover
