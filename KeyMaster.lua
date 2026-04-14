@@ -2778,9 +2778,12 @@ local function TrySetGreatVaultTexture(texture)
 
     if texture.SetAtlas then
         local atlasCandidates = {
+            "UI-WeeklyRewards-UnlockedFrame",
+            "UI-WeeklyRewards-LockedFrame",
             "weeklyrewards-greatvault-unlocked",
             "weeklyrewards-greatvault-locked",
             "weeklyrewards-activities-background-mythicplus",
+            "ChallengeMode-guild-background",
             "adventures-32x32",
         }
 
@@ -2923,13 +2926,34 @@ local function RefreshKSMMainTab()
     if ui.ksmVaultLine then ui.ksmVaultLine:Hide() end
     if ui.ksmPortalsLabel then ui.ksmPortalsLabel:Hide() end
 
+    if not ui.ksmSeasonHeader then
+        ui.ksmSeasonHeader = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        ui.ksmSeasonHeader:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -4)
+        ui.ksmSeasonHeader:SetTextColor(1.0, 0.84, 0.15, 1)
+        ui.ksmSeasonHeader:SetText("Mythic+ Dungeons")
+    end
+
+    if not ui.ksmWeekHeader then
+        ui.ksmWeekHeader = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        ui.ksmWeekHeader:SetPoint("TOP", ui.ksmSeasonHeader, "BOTTOM", 0, -4)
+        ui.ksmWeekHeader:SetTextColor(1, 1, 1, 1)
+        ui.ksmWeekHeader:SetText("This Week")
+    end
+
+    if not ui.ksmVaultPrompt then
+        ui.ksmVaultPrompt = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        ui.ksmVaultPrompt:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -92)
+        ui.ksmVaultPrompt:SetTextColor(1.0, 0.8, 0.1, 1)
+        ui.ksmVaultPrompt:SetText("Complete Mythic+ dungeons to earn:")
+    end
+
     if not ui.ksmAffixButtons then
         ui.ksmAffixButtons = {}
     end
 
     local affixCount = type(affixIDs) == "table" and #affixIDs or 0
-    local affixSize = 38
-    local affixGap = 10
+    local affixSize = 42
+    local affixGap = 12
     local affixStartX = -(((affixCount * affixSize) + ((max(affixCount - 1, 0)) * affixGap)) / 2)
 
     for index = 1, affixCount do
@@ -2970,7 +2994,7 @@ local function RefreshKSMMainTab()
         button.icon:SetTexture(affixTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
         button.affixID = affixID
         button:ClearAllPoints()
-        button:SetPoint("TOP", ui.ksmMainContent, "TOP", affixStartX + ((index - 1) * (affixSize + affixGap)) + (affixSize / 2), -28)
+        button:SetPoint("TOP", ui.ksmMainContent, "TOP", affixStartX + ((index - 1) * (affixSize + affixGap)) + (affixSize / 2), -34)
         button:Show()
     end
 
@@ -2978,20 +3002,25 @@ local function RefreshKSMMainTab()
         ui.ksmAffixButtons[index]:Hide()
     end
 
-    if ui.ksmVaultButton and ui.ksmVaultButton.icon then
-        TrySetGreatVaultTexture(ui.ksmVaultButton.icon)
+    if ui.ksmVaultButton then
+        if ui.ksmVaultButton.plate then
+            TrySetGreatVaultTexture(ui.ksmVaultButton.plate)
+        end
+        if ui.ksmVaultButton.lock then
+            ui.ksmVaultButton.lock:SetTexture("Interface\\Buttons\\LockButton-Locked-Up")
+        end
     end
 
     if not ui.ksmRatingText then
         ui.ksmRatingText = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-        ui.ksmRatingText:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -188)
+        ui.ksmRatingText:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -230)
         ui.ksmRatingText:SetTextColor(1.0, 0.72, 0.2, 1)
     end
     ui.ksmRatingText:SetText(score and tostring(floor(score + 0.5)) or "—")
 
     if not ui.ksmRatingLabel then
         ui.ksmRatingLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ui.ksmRatingLabel:SetPoint("BOTTOM", ui.ksmRatingText, "TOP", 0, 4)
+        ui.ksmRatingLabel:SetPoint("BOTTOM", ui.ksmRatingText, "TOP", 0, 6)
         ui.ksmRatingLabel:SetTextColor(1, 1, 1, 0.95)
         ui.ksmRatingLabel:SetText("Mythic+ Rating")
     end
@@ -3012,19 +3041,19 @@ local function RefreshKSMMainTab()
 
     if not ui.ksmPortalLabel then
         ui.ksmPortalLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ui.ksmPortalLabel:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -254)
+        ui.ksmPortalLabel:SetPoint("TOP", ui.ksmMainContent, "TOP", 0, -298)
         ui.ksmPortalLabel:SetTextColor(1, 1, 1, 1)
         ui.ksmPortalLabel:SetText("Season Best")
     end
 
     local entries = GetCurrentSeasonPortalEntries()
     local maxTiles = min(#entries, 8)
-    local tileWidth = 66
-    local tileHeight = 44
-    local tileGap = 4
+    local tileWidth = 62
+    local tileHeight = 54
+    local tileGap = 3
     local totalWidth = (maxTiles * tileWidth) + (max(0, maxTiles - 1) * tileGap)
     local startX = -(totalWidth / 2)
-    local rowY = -276
+    local rowY = -324
 
     for index = 1, maxTiles do
         local entry = entries[index]
@@ -3045,10 +3074,16 @@ local function RefreshKSMMainTab()
             local border = button:CreateTexture(nil, "OVERLAY")
             border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
             border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-            border:SetColorTexture(1, 1, 1, 0.16)
+            border:SetColorTexture(1, 1, 1, 0.22)
+
+            local shade = button:CreateTexture(nil, "BORDER")
+            shade:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+            shade:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+            shade:SetHeight(18)
+            shade:SetColorTexture(0, 0, 0, 0.55)
 
             local levelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            levelText:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -2)
+            levelText:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -3)
             levelText:SetTextColor(1.0, 0.72, 0.2, 1)
             button.levelText = levelText
 
@@ -3286,15 +3321,20 @@ local function CreateKSMWindow()
         self:StopMovingOrSizing()
     end)
     frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         tile = false,
-        edgeSize = 1,
+        edgeSize = 12,
         insets = { left = 0, right = 0, top = 0, bottom = 0 },
     })
-    frame:SetBackdropColor(0, 0, 0, 0.72)
-    frame:SetBackdropBorderColor(1, 1, 1, 0.12)
+    frame:SetBackdropColor(0.03, 0.03, 0.04, 0.95)
+    frame:SetBackdropBorderColor(0.18, 0.55, 0.95, 0.35)
     frame:Hide()
+
+    local innerShade = frame:CreateTexture(nil, "BACKGROUND")
+    innerShade:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
+    innerShade:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
+    innerShade:SetColorTexture(0, 0, 0, 0.35)
 
     local accent = frame:CreateTexture(nil, "BORDER")
     accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
@@ -3413,33 +3453,39 @@ local function CreateKSMWindow()
 
     -- Centered Great Vault art button
     local vaultButton = CreateFrame("Button", nil, mainContent)
-    vaultButton:SetSize(104, 104)
-    vaultButton:SetPoint("TOP", mainContent, "TOP", 0, -78)
+    vaultButton:SetSize(128, 128)
+    vaultButton:SetPoint("TOP", mainContent, "TOP", 0, -108)
 
     local vaultGlow = vaultButton:CreateTexture(nil, "BACKGROUND")
     vaultGlow:SetPoint("CENTER", vaultButton, "CENTER", 0, 0)
-    vaultGlow:SetSize(150, 150)
+    vaultGlow:SetSize(188, 188)
     vaultGlow:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-    vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.35)
+    vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.42)
 
-    local vaultIcon = vaultButton:CreateTexture(nil, "ARTWORK")
-    vaultIcon:SetAllPoints(vaultButton)
-    TrySetGreatVaultTexture(vaultIcon)
+    local vaultPlate = vaultButton:CreateTexture(nil, "ARTWORK")
+    vaultPlate:SetAllPoints(vaultButton)
+    TrySetGreatVaultTexture(vaultPlate)
 
-    vaultButton.icon = vaultIcon
+    local vaultLock = vaultButton:CreateTexture(nil, "OVERLAY")
+    vaultLock:SetSize(40, 40)
+    vaultLock:SetPoint("CENTER", vaultButton, "CENTER", 0, -2)
+    vaultLock:SetTexture("Interface\\Buttons\\LockButton-Locked-Up")
+
+    vaultButton.plate = vaultPlate
+    vaultButton.lock = vaultLock
     vaultButton:SetScript("OnClick", function()
         if not TryOpenGreatVaultUI() then
             PrintLocal("Unable to open Great Vault in this client build")
         end
     end)
     vaultButton:SetScript("OnEnter", function(self)
-        vaultGlow:SetVertexColor(1, 0.9, 0.5, 0.5)
+        vaultGlow:SetVertexColor(1, 0.9, 0.5, 0.58)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Open Great Vault", 1, 1, 1)
         GameTooltip:Show()
     end)
     vaultButton:SetScript("OnLeave", function(self)
-        vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.35)
+        vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.42)
         GameTooltip_Hide()
     end)
 
