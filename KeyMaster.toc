@@ -2,7 +2,7 @@
 ## Title: KeyStone Master
 ## Notes: Auto-replies with your Mythic+ key, auto-slots matching keys, and shows a Mythic+ overlay UI.
 ## Author: Karnytine-Stormrage (joe@tyreenet.com)
-## Version: 1.6.8
+## Version: 1.6.9
 ## SavedVariables: KeyMasterDB
 
 KeyMaster.lua
