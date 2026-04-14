@@ -132,6 +132,7 @@ local ui = {
     ksmPartyContent = nil,
     ksmGuildContent = nil,
     ksmPartyLines = {},
+    ksmPartyRows = {},
     ksmGuildLines = {},
     ksmGuildRows = {},
     ksmPortalButtons = {},
@@ -1063,12 +1064,12 @@ end
 local lastGuildSyncRequestAt = 0
 local function RequestGuildKeysFromAllSources(force)
     if not (IsInGuild and IsInGuild()) then
-        return
+        return false
     end
 
     local now = GetTime and GetTime() or 0
     if not force and now > 0 and (now - lastGuildSyncRequestAt) < 8 then
-        return
+        return false
     end
     lastGuildSyncRequestAt = now
 
@@ -1083,6 +1084,8 @@ local function RequestGuildKeysFromAllSources(force)
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
         pcall(C_ChatInfo.SendAddonMessage, ASTRAL_KEYS_PREFIX, "request", "GUILD")
     end
+
+    return true
 end
 
 local function HandleKeyMasterAddonMessage(message, sender)
@@ -1226,13 +1229,44 @@ local function GetBestRunFromMapLookup(funcName)
 
     local best
 
+    local function ResolveLookupScore(result1, result2)
+        local score
+
+        if type(result1) == "table" then
+            score = result1.mapScore or result1.score or result1.rating or result1.bestRunScore or result1.currentSeasonScore or result1.overallScore
+        elseif type(result2) == "table" then
+            score = result2.mapScore or result2.score or result2.rating or result2.bestRunScore or result2.currentSeasonScore or result2.overallScore
+        end
+
+        score = tonumber(score)
+        if type(score) == "number" and score > 0 then
+            return score
+        end
+
+        return nil
+    end
+
     for _, mapID in ipairs(maps) do
         local ok, result1, result2 = pcall(C_MythicPlus[funcName], mapID)
         if ok then
             local level = ResolveBestLevel(result1, result2)
             if type(level) == "number" and level > 0 then
-                if not best or level > best.level then
-                    best = { level = level, mapID = mapID }
+                local entry = {
+                    level = level,
+                    mapID = mapID,
+                    score = ResolveLookupScore(result1, result2),
+                }
+
+                if not best then
+                    best = entry
+                elseif type(entry.score) == "number" and type(best.score) == "number" and entry.score ~= best.score then
+                    if entry.score > best.score then
+                        best = entry
+                    end
+                elseif type(entry.score) == "number" and type(best.score) ~= "number" then
+                    best = entry
+                elseif (entry.level or 0) > (best.level or 0) then
+                    best = entry
                 end
             end
         end
@@ -1358,19 +1392,49 @@ local function GetBestRunsFromHistory()
         end
     end
 
+    local mapWeekBest = GetBestRunFromMapLookup("GetWeeklyBestForMap")
+    local mapSeasonBest = GetBestRunFromMapLookup("GetSeasonBestForMap")
+
+    if IsBetterRun(mapWeekBest, weekBest) then
+        weekBest = mapWeekBest
+    end
+    if IsBetterRun(mapSeasonBest, seasonBest) then
+        seasonBest = mapSeasonBest
+    end
+
     return weekBest, seasonBest
 end
 
 local function FormatBestRun(bestRun)
-    if not bestRun then
+    if type(bestRun) ~= "table" then
         return "None"
     end
 
-    if type(bestRun.score) == "number" and bestRun.score > 0 then
-        return string.format("+%d %s (%d)", bestRun.level, FormatDungeonLabel(bestRun.mapID), floor(bestRun.score + 0.5))
+    local level = tonumber(bestRun.level)
+    if not level then
+        return "None"
     end
 
-    return string.format("+%d %s", bestRun.level, FormatDungeonLabel(bestRun.mapID))
+    local mapLabel = FormatDungeonLabel(bestRun.mapID)
+
+    if type(bestRun.score) == "number" and bestRun.score > 0 then
+        return string.format("+%d %s (%d)", level, mapLabel, floor(bestRun.score + 0.5))
+    end
+
+    return string.format("+%d %s", level, mapLabel)
+end
+
+local function FormatBestRunNoScore(bestRun)
+    if type(bestRun) ~= "table" then
+        return "None"
+    end
+
+    local level = tonumber(bestRun.level)
+    if not level then
+        return "None"
+    end
+
+    return string.format("+%d %s", level, FormatDungeonLabel(bestRun.mapID))
 end
 
 local function BuildBestReply()
@@ -2140,7 +2204,7 @@ local function ApplyMythicFrameSettings()
     else
         ui.dragLabel:SetText("KeyMaster")
     end
-    ui.dragLabel:SetShown(not settings.locked)
+    if not settings.locked then ui.dragLabel:Show() else ui.dragLabel:Hide() end
 end
 
 local function IsMythicUIEnabled()
@@ -2865,16 +2929,13 @@ local function GetCurrentSeasonPortalEntries()
         end
 
         local spellID = GetPortalSpellIDForMap(mapID)
-        if not spellID then
-            return
-        end
 
         addedByMapID[mapID] = true
         table.insert(entries, {
             mapID = mapID,
             mapName = FormatDungeonLabel(mapID),
             spellID = spellID,
-            known = IsSpellKnown and IsSpellKnown(spellID) == true,
+            known = spellID and IsSpellKnown and IsSpellKnown(spellID) == true,
         })
     end
 
@@ -2895,6 +2956,16 @@ local function GetCurrentSeasonPortalEntries()
     if factionGroup == "Horde" then
         for mapID in pairs(KSM_PORTAL_SPELL_IDS_HORDE) do
             AddPortalEntry(mapID)
+        end
+    end
+
+    if #entries == 0 then
+        local weekBest, seasonBest = GetBestRunsFromHistory()
+        if weekBest and weekBest.mapID then
+            AddPortalEntry(tonumber(weekBest.mapID))
+        end
+        if seasonBest and seasonBest.mapID then
+            AddPortalEntry(tonumber(seasonBest.mapID))
         end
     end
 
@@ -2961,12 +3032,39 @@ local function GetVaultProgressSummary()
 end
 
 local function ResolveBestScore(result1, result2)
+    local function ExtractScoreFromTable(value, depth)
+        if depth <= 0 or type(value) ~= "table" then
+            return nil
+        end
+
+        local bestScore
+        for key, entry in pairs(value) do
+            if type(entry) == "number" then
+                local keyName = type(key) == "string" and strlower(key) or ""
+                if keyName ~= "" and (strfind(keyName, "score", 1, true) or strfind(keyName, "rating", 1, true)) then
+                    if entry > 0 and (not bestScore or entry > bestScore) then
+                        bestScore = entry
+                    end
+                end
+            elseif type(entry) == "table" then
+                local nested = ExtractScoreFromTable(entry, depth - 1)
+                if nested and (not bestScore or nested > bestScore) then
+                    bestScore = nested
+                end
+            end
+        end
+
+        return bestScore
+    end
+
     local score
 
     if type(result1) == "table" then
         score = result1.mapScore or result1.score or result1.rating or result1.bestRunScore or result1.currentSeasonScore
+        score = score or ExtractScoreFromTable(result1, 3)
     elseif type(result2) == "table" then
         score = result2.mapScore or result2.score or result2.rating or result2.bestRunScore or result2.currentSeasonScore
+        score = score or ExtractScoreFromTable(result2, 3)
     end
 
     score = tonumber(score)
@@ -2992,34 +3090,255 @@ local function GetBestSeasonRunForMap(mapID)
         return nil
     end
 
+    local score = ResolveBestScore(result1, result2)
+    if (not score) and C_MythicPlus and C_MythicPlus.GetSeasonBestAffixScoreInfoForMap then
+        local infoOk, scoreInfo = pcall(C_MythicPlus.GetSeasonBestAffixScoreInfoForMap, mapID)
+        if infoOk and type(scoreInfo) == "table" then
+            score = ResolveBestScore(scoreInfo, nil)
+            if (not score) and type(scoreInfo.overallScore) == "number" then
+                score = scoreInfo.overallScore
+            end
+        end
+    end
+
     return {
         mapID = mapID,
         level = level,
-        score = ResolveBestScore(result1, result2),
+        score = score,
     }
 end
 
-local function GetDungeonTileTexture(mapID, spellID)
-    if C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
-        local ok, result1, result2, result3, result4, result5, result6 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
-        if ok then
-            local candidates = { result6, result5, result4, result3, result2, result1 }
-            for _, candidate in ipairs(candidates) do
-                if type(candidate) == "number" or type(candidate) == "string" then
-                    return candidate
+local function GetBestSeasonRunForMapFromHistory(mapID)
+    if not (type(mapID) == "number" and mapID > 0 and C_MythicPlus and C_MythicPlus.GetRunHistory) then
+        return nil
+    end
+
+    local ok, history = pcall(C_MythicPlus.GetRunHistory)
+    if not ok or type(history) ~= "table" then
+        return nil
+    end
+
+    local best
+
+    local function ResolveRunLevel(run)
+        local level = run and (run.level or run.bestRunLevel or run.keystoneLevel or run.completedLevel)
+        level = tonumber(level)
+        if type(level) == "number" and level >= 2 and level <= 40 then
+            return level
+        end
+        return nil
+    end
+
+    local function ResolveRunMapID(run)
+        local resolvedMapID = run and (run.mapChallengeModeID or run.mapID or run.challengeMapID)
+        resolvedMapID = tonumber(resolvedMapID)
+        if type(resolvedMapID) == "number" and resolvedMapID > 0 then
+            return resolvedMapID
+        end
+        return nil
+    end
+
+    local function ResolveRunScore(run)
+        local score = run and (run.mapScore or run.score or run.rating or run.bestRunScore or run.currentSeasonScore or run.overallScore or run.dungeonScore)
+        if (not score) and type(run) == "table" then
+            for key, value in pairs(run) do
+                if type(value) == "number" and type(key) == "string" then
+                    local keyName = strlower(key)
+                    if (strfind(keyName, "score", 1, true) or strfind(keyName, "rating", 1, true)) and value > 0 then
+                        score = value
+                        break
+                    end
+                end
+            end
+        end
+        score = tonumber(score)
+        if type(score) == "number" and score > 0 then
+            return score
+        end
+        return nil
+    end
+
+    local function IsBetter(candidate, current)
+        if not candidate then
+            return false
+        end
+        if not current then
+            return true
+        end
+
+        local candidateScore = tonumber(candidate.score)
+        local currentScore = tonumber(current.score)
+        if candidateScore and currentScore and candidateScore ~= currentScore then
+            return candidateScore > currentScore
+        end
+        if candidateScore and not currentScore then
+            return true
+        end
+        if currentScore and not candidateScore then
+            return false
+        end
+
+        return (candidate.level or 0) > (current.level or 0)
+    end
+
+    for _, run in ipairs(history) do
+        if run and run.completed ~= false and ResolveRunMapID(run) == mapID then
+            local level = ResolveRunLevel(run)
+            if level then
+                local candidate = {
+                    mapID = mapID,
+                    level = level,
+                    score = ResolveRunScore(run),
+                }
+                if IsBetter(candidate, best) then
+                    best = candidate
                 end
             end
         end
     end
 
-    if spellID and C_Spell and C_Spell.GetSpellInfo then
-        local _, _, spellIcon = C_Spell.GetSpellInfo(spellID)
-        if spellIcon then
-            return spellIcon
+    return best
+end
+
+local function GetBestPortalRunForMap(mapID)
+    local byMapAPI = GetBestSeasonRunForMap(mapID)
+    local byHistory = GetBestSeasonRunForMapFromHistory(mapID)
+
+    if not byMapAPI then
+        return byHistory
+    end
+    if not byHistory then
+        return byMapAPI
+    end
+
+    local apiScore = tonumber(byMapAPI.score)
+    local historyScore = tonumber(byHistory.score)
+    if apiScore and historyScore and apiScore ~= historyScore then
+        return apiScore > historyScore and byMapAPI or byHistory
+    end
+    if apiScore and not historyScore then
+        return byMapAPI
+    end
+    if historyScore and not apiScore then
+        return byHistory
+    end
+
+    return (byMapAPI.level or 0) >= (byHistory.level or 0) and byMapAPI or byHistory
+end
+
+local function GetBestSeasonRunFromKnownMaps()
+    local best
+    local seen = {}
+
+    local function ConsiderMap(mapID)
+        mapID = tonumber(mapID)
+        if not mapID or mapID <= 0 or seen[mapID] then
+            return
+        end
+        seen[mapID] = true
+
+        local candidate = GetBestSeasonRunForMap(mapID)
+        if not candidate then
+            return
+        end
+
+        if not best then
+            best = candidate
+            return
+        end
+
+        local candidateScore = tonumber(candidate.score)
+        local bestScore = tonumber(best.score)
+        if candidateScore and bestScore and candidateScore ~= bestScore then
+            if candidateScore > bestScore then
+                best = candidate
+            end
+            return
+        end
+
+        if candidateScore and not bestScore then
+            best = candidate
+            return
+        end
+
+        if (candidate.level or 0) > (best.level or 0) then
+            best = candidate
         end
     end
 
-    return "Interface\\Icons\\INV_Misc_QuestionMark"
+    if C_ChallengeMode and C_ChallengeMode.GetMapTable then
+        local ok, maps = pcall(C_ChallengeMode.GetMapTable)
+        if ok and type(maps) == "table" then
+            for _, mapID in ipairs(maps) do
+                ConsiderMap(mapID)
+            end
+        end
+    end
+
+    for mapID in pairs(KSM_PORTAL_SPELL_IDS) do
+        ConsiderMap(mapID)
+    end
+
+    if UnitFactionGroup and UnitFactionGroup("player") == "Horde" then
+        for mapID in pairs(KSM_PORTAL_SPELL_IDS_HORDE) do
+            ConsiderMap(mapID)
+        end
+    end
+
+    return best
+end
+
+local function ResolveSpellIconTexture(spellID)
+    if type(spellID) ~= "number" or spellID <= 0 then
+        return nil
+    end
+
+    if C_Spell and C_Spell.GetSpellInfo then
+        local ok, info = pcall(C_Spell.GetSpellInfo, spellID)
+        if ok then
+            if type(info) == "table" then
+                local icon = info.iconID or info.iconFileID or info.iconTexture
+                if type(icon) == "number" or type(icon) == "string" then
+                    return icon
+                end
+            elseif type(info) == "number" or type(info) == "string" then
+                return info
+            end
+        end
+    end
+
+    if GetSpellInfo then
+        local _, _, icon = GetSpellInfo(spellID)
+        if type(icon) == "number" or type(icon) == "string" then
+            return icon
+        end
+    end
+
+    return nil
+end
+
+local function GetDungeonTileTexture(mapID, spellID)
+    local spellIcon = ResolveSpellIconTexture(spellID)
+    if spellIcon then
+        return spellIcon, true
+    end
+
+    if C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+        local ok, result1, result2, result3, result4, result5, result6 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+        if ok then
+            local candidates = { result6, result5, result4, result3, result2, result1 }
+            for _, candidate in ipairs(candidates) do
+                if type(candidate) == "string" then
+                    return candidate, false
+                end
+                if type(candidate) == "number" and candidate > 10000 then
+                    return candidate, false
+                end
+            end
+        end
+    end
+
+    return "Interface\\Icons\\INV_Misc_QuestionMark", false
 end
 
 local function TrySetGreatVaultTexture(texture)
@@ -3028,35 +3347,12 @@ local function TrySetGreatVaultTexture(texture)
     end
 
     local unlockedSlots, totalSlots = GetVaultUnlockCounts()
-    if unlockedSlots and totalSlots and totalSlots > 0 then
-        local isFullVault = unlockedSlots >= totalSlots
-        texture:SetTexture(isFullVault and KSM_VAULT_TEXTURE_GLOWY or KSM_VAULT_TEXTURE_EMPTY)
-        texture:SetTexCoord(0, 1, 0, 1)
-        return true
-    end
-
-    if texture.SetAtlas then
-        local atlasCandidates = {
-            "UI-WeeklyRewards-UnlockedFrame",
-            "UI-WeeklyRewards-LockedFrame",
-            "weeklyrewards-greatvault-unlocked",
-            "weeklyrewards-greatvault-locked",
-            "weeklyrewards-activities-background-mythicplus",
-            "ChallengeMode-guild-background",
-            "adventures-32x32",
-        }
-
-        for _, atlasName in ipairs(atlasCandidates) do
-            local ok, applied = pcall(texture.SetAtlas, texture, atlasName, true)
-            if ok and applied then
-                return false
-            end
-        end
-    end
-
-    texture:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    local hasAnyUnlockedSlot = type(unlockedSlots) == "number" and unlockedSlots > 0
+    local _ = totalSlots
+    texture:SetTexture(hasAnyUnlockedSlot and KSM_VAULT_TEXTURE_GLOWY or KSM_VAULT_TEXTURE_EMPTY)
     texture:SetTexCoord(0, 1, 0, 1)
-    return false
+    texture:SetBlendMode("BLEND")
+    return true
 end
 
 local function TryGetMythicScoreForIdentifier(identifier)
@@ -3217,6 +3513,100 @@ local function EnsureKSMGuildRow(index)
     return row
 end
 
+local function EnsureKSMPartyRow(index)
+    if ui.ksmPartyRows[index] then
+        return ui.ksmPartyRows[index]
+    end
+
+    local row = CreateFrame("Frame", nil, ui.ksmPartyContent)
+    row:SetSize(570, 58)
+
+    local portraitBG = row:CreateTexture(nil, "BACKGROUND")
+    portraitBG:SetPoint("TOPLEFT", row, "TOPLEFT", 4, -6)
+    portraitBG:SetSize(40, 40)
+    portraitBG:SetColorTexture(0.03, 0.04, 0.05, 0.8)
+
+    local portrait = row:CreateTexture(nil, "ARTWORK")
+    portrait:SetPoint("TOPLEFT", portraitBG, "TOPLEFT", 1, -1)
+    portrait:SetPoint("BOTTOMRIGHT", portraitBG, "BOTTOMRIGHT", -1, 1)
+    portrait:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    row.portrait = portrait
+
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameText:SetPoint("TOPLEFT", portraitBG, "TOPRIGHT", 10, -2)
+    nameText:SetWidth(255)
+    nameText:SetJustifyH("LEFT")
+    row.nameText = nameText
+
+    local keyLabel = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    keyLabel:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -5)
+    keyLabel:SetTextColor(0.75, 0.78, 0.82, 1)
+    keyLabel:SetText("Weekly Key")
+    row.keyLabel = keyLabel
+
+    local keyTile = CreateFrame("Button", nil, row)
+    keyTile:SetSize(44, 44)
+    keyTile:SetPoint("TOPLEFT", row, "TOPLEFT", 320, -6)
+
+    local tileBG = keyTile:CreateTexture(nil, "BACKGROUND")
+    tileBG:SetAllPoints(keyTile)
+    tileBG:SetColorTexture(0.02, 0.03, 0.04, 0.82)
+
+    local icon = keyTile:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", keyTile, "TOPLEFT", 2, -2)
+    icon:SetPoint("BOTTOMRIGHT", keyTile, "BOTTOMRIGHT", -2, 2)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    keyTile.icon = icon
+
+    local levelText = keyTile:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    levelText:SetPoint("TOPLEFT", keyTile, "TOPLEFT", 2, -2)
+    levelText:SetTextColor(1.0, 0.82, 0.2, 1)
+    keyTile.levelText = levelText
+
+    local dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    dungeonText:SetPoint("LEFT", keyTile, "RIGHT", 10, 0)
+    dungeonText:SetWidth(200)
+    dungeonText:SetJustifyH("LEFT")
+    dungeonText:SetTextColor(0.88, 0.9, 0.93, 1)
+    row.dungeonText = dungeonText
+
+    keyTile:SetScript("OnClick", function(self)
+        if not self.spellID then
+            return
+        end
+
+        if not (IsSpellKnown and IsSpellKnown(self.spellID)) then
+            PrintLocal("You do not know this portal")
+            return
+        end
+
+        if CastSpellByID then
+            pcall(CastSpellByID, self.spellID)
+        end
+    end)
+
+    keyTile:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(self.dungeonLabel or "No key", 1, 1, 1)
+        if self.keyLevel and self.keyLevel > 0 then
+            GameTooltip:AddLine(string.format("Weekly Key: +%d", self.keyLevel), 1, 0.82, 0.2)
+        else
+            GameTooltip:AddLine("Weekly Key: None", 0.8, 0.8, 0.8)
+        end
+        if self.spellID then
+            GameTooltip:AddLine(IsSpellKnown and IsSpellKnown(self.spellID) and "Click to cast portal" or "Portal not learned", 0.7, 0.82, 1)
+        end
+        GameTooltip:Show()
+    end)
+    keyTile:SetScript("OnLeave", GameTooltip_Hide)
+    row.keyTile = keyTile
+
+    ui.ksmPartyRows[index] = row
+    return row
+end
+
 local function SetKSMActiveTab(tabName)
     if not ui.ksmFrame then
         return
@@ -3228,9 +3618,9 @@ local function SetKSMActiveTab(tabName)
     local showParty = ui.ksmActiveTab == "party"
     local showGuild = ui.ksmActiveTab == "guild"
 
-    if ui.ksmMainContent then ui.ksmMainContent:SetShown(showMain) end
-    if ui.ksmPartyContent then ui.ksmPartyContent:SetShown(showParty) end
-    if ui.ksmGuildContent then ui.ksmGuildContent:SetShown(showGuild) end
+    if ui.ksmMainContent then if showMain then ui.ksmMainContent:Show() else ui.ksmMainContent:Hide() end end
+    if ui.ksmPartyContent then if showParty then ui.ksmPartyContent:Show() else ui.ksmPartyContent:Hide() end end
+    if ui.ksmGuildContent then if showGuild then ui.ksmGuildContent:Show() else ui.ksmGuildContent:Hide() end end
 
     if ui.ksmMainTab then
         ui.ksmMainTab.isSelected = showMain
@@ -3238,7 +3628,7 @@ local function SetKSMActiveTab(tabName)
             ui.ksmMainTab.bg:SetColorTexture(showMain and 0.09 or 0.04, showMain and 0.09 or 0.04, showMain and 0.11 or 0.05, showMain and 0.96 or 0.85)
         end
         if ui.ksmMainTab.activeAccent then
-            ui.ksmMainTab.activeAccent:SetColorTexture(1, 0.78, 0.2, showMain and 0.95 or 0)
+            ui.ksmMainTab.activeAccent:SetColorTexture(0.24, 0.64, 1, showMain and 0.95 or 0)
         end
         local mainLabel = ui.ksmMainTab.label or (ui.ksmMainTab.GetFontString and ui.ksmMainTab:GetFontString())
         if mainLabel then
@@ -3251,7 +3641,7 @@ local function SetKSMActiveTab(tabName)
             ui.ksmPartyTab.bg:SetColorTexture(showParty and 0.09 or 0.04, showParty and 0.09 or 0.04, showParty and 0.11 or 0.05, showParty and 0.96 or 0.85)
         end
         if ui.ksmPartyTab.activeAccent then
-            ui.ksmPartyTab.activeAccent:SetColorTexture(1, 0.78, 0.2, showParty and 0.95 or 0)
+            ui.ksmPartyTab.activeAccent:SetColorTexture(0.24, 0.64, 1, showParty and 0.95 or 0)
         end
         local partyLabel = ui.ksmPartyTab.label or (ui.ksmPartyTab.GetFontString and ui.ksmPartyTab:GetFontString())
         if partyLabel then
@@ -3264,7 +3654,7 @@ local function SetKSMActiveTab(tabName)
             ui.ksmGuildTab.bg:SetColorTexture(showGuild and 0.09 or 0.04, showGuild and 0.09 or 0.04, showGuild and 0.11 or 0.05, showGuild and 0.96 or 0.85)
         end
         if ui.ksmGuildTab.activeAccent then
-            ui.ksmGuildTab.activeAccent:SetColorTexture(1, 0.78, 0.2, showGuild and 0.95 or 0)
+            ui.ksmGuildTab.activeAccent:SetColorTexture(0.24, 0.64, 1, showGuild and 0.95 or 0)
         end
         local guildLabel = ui.ksmGuildTab.label or (ui.ksmGuildTab.GetFontString and ui.ksmGuildTab:GetFontString())
         if guildLabel then
@@ -3288,8 +3678,57 @@ local function RefreshKSMMainTab()
         seasonBest = seasonBest or GetBestRunFromMapLookup("GetSeasonBestForMap")
     end
 
+    local mapSeasonBest = GetBestSeasonRunFromKnownMaps()
+    if mapSeasonBest then
+        local mapScore = tonumber(mapSeasonBest.score)
+        local currentScore = seasonBest and tonumber(seasonBest.score)
+        if not seasonBest
+            or (mapScore and currentScore and mapScore > currentScore)
+            or (mapScore and not currentScore)
+            or ((not mapScore or not currentScore) and (mapSeasonBest.level or 0) > (seasonBest.level or 0))
+        then
+            seasonBest = mapSeasonBest
+        end
+    end
+
     local _, affixIDs = GetActiveKeystoneDetails()
     local keyMapID, keyLevel = GetOwnedKeystoneSnapshot()
+    local portalEntries = GetCurrentSeasonPortalEntries()
+
+    local function IsBetterSeasonCandidate(candidate, current)
+        if not candidate then
+            return false
+        end
+        if not current then
+            return true
+        end
+
+        local candidateScore = tonumber(candidate.score)
+        local currentScore = tonumber(current.score)
+        if candidateScore and currentScore and candidateScore ~= currentScore then
+            return candidateScore > currentScore
+        end
+        if candidateScore and not currentScore then
+            return true
+        end
+        if currentScore and not candidateScore then
+            return false
+        end
+
+        return (candidate.level or 0) > (current.level or 0)
+    end
+
+    local portalSeasonBest
+    for _, entry in ipairs(portalEntries) do
+        local bestForMap = GetBestPortalRunForMap(entry.mapID)
+        if bestForMap and IsBetterSeasonCandidate(bestForMap, portalSeasonBest) then
+            portalSeasonBest = bestForMap
+        end
+    end
+
+    if IsBetterSeasonCandidate(portalSeasonBest, seasonBest) then
+        seasonBest = portalSeasonBest
+    end
 
     if ui.ksmRatingLine then ui.ksmRatingLine:Hide() end
     if ui.ksmBestLine then ui.ksmBestLine:Hide() end
@@ -3300,7 +3739,7 @@ local function RefreshKSMMainTab()
 
     if not ui.ksmSeasonHeader then
         ui.ksmSeasonHeader = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        ui.ksmSeasonHeader:SetPoint("TOP", weeklyPanel, "TOP", 0, -8)
+        ui.ksmSeasonHeader:SetPoint("TOP", weeklyPanel, "TOP", 0, -10)
         ui.ksmSeasonHeader:SetTextColor(1.0, 0.84, 0.15, 1)
         ui.ksmSeasonHeader:SetText("Mythic+ Dungeons")
         ui.ksmSeasonHeader:SetFontObject("GameFontHighlight")
@@ -3308,7 +3747,7 @@ local function RefreshKSMMainTab()
 
     if not ui.ksmWeekHeader then
         ui.ksmWeekHeader = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        ui.ksmWeekHeader:SetPoint("TOP", ui.ksmSeasonHeader, "BOTTOM", 0, -4)
+        ui.ksmWeekHeader:SetPoint("TOP", weeklyPanel, "TOP", 0, -26)
         ui.ksmWeekHeader:SetTextColor(1, 1, 1, 1)
         ui.ksmWeekHeader:SetText("This Week")
         ui.ksmWeekHeader:SetFontObject("GameFontHighlightLarge")
@@ -3316,10 +3755,11 @@ local function RefreshKSMMainTab()
 
     if not ui.ksmVaultPrompt then
         ui.ksmVaultPrompt = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ui.ksmVaultPrompt:SetPoint("TOP", weeklyPanel, "TOP", 0, -66)
         ui.ksmVaultPrompt:SetTextColor(1.0, 0.8, 0.1, 1)
         ui.ksmVaultPrompt:SetText("Complete Mythic+ dungeons to earn:")
     end
+    ui.ksmVaultPrompt:ClearAllPoints()
+    ui.ksmVaultPrompt:SetPoint("TOP", weeklyPanel, "TOP", 0, -92)
 
     if not ui.ksmAffixButtons then
         ui.ksmAffixButtons = {}
@@ -3374,7 +3814,7 @@ local function RefreshKSMMainTab()
         button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         button.affixID = affixID
         button:ClearAllPoints()
-        button:SetPoint("TOP", weeklyPanel, "TOP", affixStartX + ((index - 1) * (affixSize + affixGap)) + (affixSize / 2), -35)
+        button:SetPoint("TOP", weeklyPanel, "TOP", affixStartX + ((index - 1) * (affixSize + affixGap)) + (affixSize / 2), -46)
         button:Show()
     end
 
@@ -3386,70 +3826,170 @@ local function RefreshKSMMainTab()
         if ui.ksmVaultButton.plate then
             local usingCustomVaultArt = TrySetGreatVaultTexture(ui.ksmVaultButton.plate)
             if ui.ksmVaultButton.lock then
-                ui.ksmVaultButton.lock:SetShown(not usingCustomVaultArt)
+                local _ = usingCustomVaultArt
+                ui.ksmVaultButton.lock:Hide()
             end
         end
     end
 
     if not ui.ksmRatingText then
         ui.ksmRatingText = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-        ui.ksmRatingText:SetPoint("TOP", weeklyPanel, "TOP", 0, -224)
         ui.ksmRatingText:SetTextColor(1.0, 0.72, 0.2, 1)
     end
+    ui.ksmRatingText:ClearAllPoints()
+    ui.ksmRatingText:SetPoint("TOP", ui.ksmVaultButton or weeklyPanel, "BOTTOM", 0, -24)
+    ui.ksmRatingText:SetJustifyH("CENTER")
     ui.ksmRatingText:SetText(score and tostring(floor(score + 0.5)) or "—")
 
     if not ui.ksmRatingLabel then
-        ui.ksmRatingLabel = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ui.ksmRatingLabel:SetPoint("BOTTOM", ui.ksmRatingText, "TOP", 0, 6)
+        ui.ksmRatingLabel = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         ui.ksmRatingLabel:SetTextColor(1, 1, 1, 0.95)
         ui.ksmRatingLabel:SetText("Mythic+ Rating")
         ui.ksmRatingLabel:SetFontObject("GameFontHighlight")
     end
+    ui.ksmRatingLabel:ClearAllPoints()
+    ui.ksmRatingLabel:SetPoint("BOTTOM", ui.ksmRatingText, "TOP", 0, 6)
+    ui.ksmRatingLabel:SetJustifyH("CENTER")
+
+    if not ui.ksmRecordsBox then
+        local recordsBox = CreateFrame("Frame", nil, weeklyPanel, BackdropTemplateMixin and "BackdropTemplate")
+        recordsBox:SetSize(236, 106)
+        recordsBox:SetPoint("BOTTOMLEFT", weeklyPanel, "BOTTOMLEFT", 12, 12)
+
+        local recordsTitle = recordsBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        recordsTitle:SetPoint("TOPLEFT", recordsBox, "TOPLEFT", 8, -8)
+        recordsTitle:SetTextColor(1.0, 0.82, 0.22, 1)
+        recordsTitle:SetText("Records")
+
+        local keyLine = recordsBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        keyLine:SetPoint("TOPLEFT", recordsTitle, "BOTTOMLEFT", 0, -6)
+        keyLine:SetJustifyH("LEFT")
+        keyLine:SetTextColor(0.86, 0.9, 0.95, 1)
+
+        local vaultLine = recordsBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        vaultLine:SetPoint("TOPLEFT", keyLine, "BOTTOMLEFT", 0, -4)
+        vaultLine:SetJustifyH("LEFT")
+        vaultLine:SetTextColor(0.86, 0.9, 0.95, 1)
+
+        local weekLine = recordsBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        weekLine:SetPoint("TOPLEFT", vaultLine, "BOTTOMLEFT", 0, -4)
+        weekLine:SetJustifyH("LEFT")
+        weekLine:SetTextColor(0.86, 0.9, 0.95, 1)
+
+        local seasonLine = recordsBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        seasonLine:SetPoint("TOPLEFT", weekLine, "BOTTOMLEFT", 0, -4)
+        seasonLine:SetJustifyH("LEFT")
+        seasonLine:SetTextColor(0.86, 0.9, 0.95, 1)
+
+        ui.ksmRecordsBox = recordsBox
+        ui.ksmRecordsKeyLine = keyLine
+        ui.ksmRecordsVaultLine = vaultLine
+        ui.ksmRecordsWeekLine = weekLine
+        ui.ksmRecordsSeasonLine = seasonLine
+    end
+
+    if ui.ksmRecordsKeyLine then
+        ui.ksmRecordsKeyLine:SetText(keyLevel and string.format("Keystone: +%d %s", keyLevel, FormatDungeonLabel(keyMapID)) or "Keystone: Unavailable")
+    end
+    if ui.ksmRecordsVaultLine then
+        ui.ksmRecordsVaultLine:SetText(GetVaultProgressSummary())
+    end
+    if ui.ksmRecordsWeekLine then
+        ui.ksmRecordsWeekLine:SetText(string.format("Weekly Best: %s", FormatBestRun(weekBest)))
+    end
+    if ui.ksmRecordsSeasonLine then
+        ui.ksmRecordsSeasonLine:SetText(string.format("Season Best: %s", FormatBestRunNoScore(seasonBest)))
+    end
 
     if not ui.ksmKeyInfo then
-        ui.ksmKeyInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-        ui.ksmKeyInfo:SetPoint("TOP", ui.ksmRatingText, "BOTTOM", 0, -4)
+        ui.ksmKeyInfo = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         ui.ksmKeyInfo:SetTextColor(0.8, 0.8, 0.8, 1)
     end
+    ui.ksmKeyInfo:ClearAllPoints()
+    ui.ksmKeyInfo:SetPoint("TOPRIGHT", weeklyPanel, "TOPRIGHT", -16, -184)
+    ui.ksmKeyInfo:SetJustifyH("RIGHT")
     ui.ksmKeyInfo:SetText(keyLevel and string.format("Owned Keystone: +%d %s", keyLevel, FormatDungeonLabel(keyMapID)) or "Owned Keystone: Unavailable")
+    ui.ksmKeyInfo:Hide()
 
     if not ui.ksmVaultInfo then
-        ui.ksmVaultInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontSmall")
-        ui.ksmVaultInfo:SetPoint("TOP", ui.ksmKeyInfo, "BOTTOM", 0, -4)
+        ui.ksmVaultInfo = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         ui.ksmVaultInfo:SetTextColor(0.85, 0.85, 0.85, 1)
     end
+    ui.ksmVaultInfo:ClearAllPoints()
+    ui.ksmVaultInfo:SetPoint("TOPRIGHT", ui.ksmKeyInfo, "BOTTOMRIGHT", 0, -3)
+    ui.ksmVaultInfo:SetJustifyH("RIGHT")
     ui.ksmVaultInfo:SetText(GetVaultProgressSummary())
+    ui.ksmVaultInfo:Hide()
 
     if not ui.ksmWeekBestInfo then
-        ui.ksmWeekBestInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        ui.ksmWeekBestInfo:SetPoint("TOP", ui.ksmVaultInfo, "BOTTOM", 0, -2)
+        ui.ksmWeekBestInfo = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         ui.ksmWeekBestInfo:SetTextColor(0.78, 0.84, 0.92, 1)
     end
+    ui.ksmWeekBestInfo:ClearAllPoints()
+    ui.ksmWeekBestInfo:SetPoint("TOPRIGHT", ui.ksmVaultInfo, "BOTTOMRIGHT", 0, -3)
+    ui.ksmWeekBestInfo:SetJustifyH("RIGHT")
     ui.ksmWeekBestInfo:SetText(string.format("Best This Week: %s", weekBest and FormatBestRun(weekBest) or "No run recorded"))
+    ui.ksmWeekBestInfo:Hide()
 
     if not ui.ksmSeasonBestInfo then
-        ui.ksmSeasonBestInfo = ui.ksmMainContent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        ui.ksmSeasonBestInfo:SetPoint("TOP", ui.ksmWeekBestInfo, "BOTTOM", 0, -1)
+        ui.ksmSeasonBestInfo = weeklyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         ui.ksmSeasonBestInfo:SetTextColor(0.78, 0.84, 0.92, 1)
     end
+    ui.ksmSeasonBestInfo:ClearAllPoints()
+    ui.ksmSeasonBestInfo:SetPoint("TOPRIGHT", ui.ksmWeekBestInfo, "BOTTOMRIGHT", 0, -2)
+    ui.ksmSeasonBestInfo:SetJustifyH("RIGHT")
     ui.ksmSeasonBestInfo:SetText(string.format("Best This Season: %s", seasonBest and FormatBestRun(seasonBest) or "No run recorded"))
+    ui.ksmSeasonBestInfo:Hide()
 
     if not ui.ksmPortalLabel then
         ui.ksmPortalLabel = seasonPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ui.ksmPortalLabel:SetPoint("TOP", seasonPanel, "TOP", 0, -9)
+        ui.ksmPortalLabel:SetPoint("TOP", seasonPanel, "TOP", 0, -10)
         ui.ksmPortalLabel:SetTextColor(1, 1, 1, 1)
-        ui.ksmPortalLabel:SetText("Season Best")
+        ui.ksmPortalLabel:SetText("Season Portals")
         ui.ksmPortalLabel:SetFontObject("GameFontHighlight")
     end
 
-    local entries = GetCurrentSeasonPortalEntries()
+    local entries = portalEntries
+    local bestForMapCache = {}
+    local function GetBestForMapCached(mapID)
+        if bestForMapCache[mapID] == nil then
+            bestForMapCache[mapID] = GetBestPortalRunForMap(mapID) or false
+        end
+        return bestForMapCache[mapID] ~= false and bestForMapCache[mapID] or nil
+    end
+
+    table.sort(entries, function(left, right)
+        local leftBest = GetBestForMapCached(left.mapID)
+        local rightBest = GetBestForMapCached(right.mapID)
+        local leftScore = leftBest and tonumber(leftBest.score) or nil
+        local rightScore = rightBest and tonumber(rightBest.score) or nil
+
+        if leftScore and rightScore and leftScore ~= rightScore then
+            return leftScore > rightScore
+        end
+        if leftScore and not rightScore then
+            return true
+        end
+        if rightScore and not leftScore then
+            return false
+        end
+
+        local leftLevel = leftBest and tonumber(leftBest.level) or 0
+        local rightLevel = rightBest and tonumber(rightBest.level) or 0
+        if leftLevel ~= rightLevel then
+            return leftLevel > rightLevel
+        end
+
+        return (left.mapName or "") < (right.mapName or "")
+    end)
     local maxTiles = min(#entries, 8)
-    local tileWidth = 62
-    local tileHeight = 54
-    local tileGap = 3
-    local totalWidth = (maxTiles * tileWidth) + (max(0, maxTiles - 1) * tileGap)
-    local startX = -(totalWidth / 2)
-    local rowY = -28
+    local tileWidth = 60
+    local tileHeight = 52
+    local tileGap = 4
+
+    if ui.ksmPortalLabel then
+        ui.ksmPortalLabel:SetText(maxTiles > 0 and "Season Portals" or "Season Portals (No Data)")
+    end
 
     for index = 1, maxTiles do
         local entry = entries[index]
@@ -3464,19 +4004,8 @@ local function RefreshKSMMainTab()
 
             local dim = button:CreateTexture(nil, "OVERLAY")
             dim:SetAllPoints(button)
-            dim:SetColorTexture(0, 0, 0, 0.28)
+            dim:SetColorTexture(0, 0, 0, 0.12)
             button.dim = dim
-
-            local border = button:CreateTexture(nil, "OVERLAY")
-            border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-            border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-            border:SetColorTexture(1, 1, 1, 0.22)
-
-            local shade = button:CreateTexture(nil, "BORDER")
-            shade:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-            shade:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-            shade:SetHeight(18)
-            shade:SetColorTexture(0, 0, 0, 0.55)
 
             local levelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             levelText:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -3)
@@ -3485,6 +4014,7 @@ local function RefreshKSMMainTab()
 
             button:SetScript("OnClick", function(self)
                 if not self.spellID then
+                    PrintLocal("Portal spell is not configured for this dungeon")
                     return
                 end
 
@@ -3510,10 +4040,11 @@ local function RefreshKSMMainTab()
                 if self.bestScore then
                     GameTooltip:AddLine(string.format("Dungeon Score: %d", floor(self.bestScore + 0.5)), 0.8, 0.95, 1)
                 end
-                if self.overallScore then
-                    GameTooltip:AddLine(string.format("Mythic+ Rating: %d", floor(self.overallScore + 0.5)), 0.75, 0.95, 0.75)
+                if not self.spellID then
+                    GameTooltip:AddLine("Portal spell not configured", 0.85, 0.3, 0.3)
+                else
+                    GameTooltip:AddLine(self.known and "Click to cast portal" or "Portal locked", self.known and 0.5 or 0.8, self.known and 1 or 0.2, self.known and 0.5 or 0.2)
                 end
-                GameTooltip:AddLine(self.known and "Click to cast portal" or "Portal locked", self.known and 0.5 or 0.8, self.known and 1 or 0.2, self.known and 0.5 or 0.2)
                 GameTooltip:Show()
             end)
             button:SetScript("OnLeave", GameTooltip_Hide)
@@ -3521,7 +4052,7 @@ local function RefreshKSMMainTab()
             ui.ksmPortalButtons[index] = button
         end
 
-        local bestForMap = GetBestSeasonRunForMap(entry.mapID)
+        local bestForMap = GetBestForMapCached(entry.mapID)
         button.bestLevel = bestForMap and bestForMap.level or nil
         button.bestScore = bestForMap and bestForMap.score or nil
         button.overallScore = score
@@ -3529,13 +4060,22 @@ local function RefreshKSMMainTab()
         button.mapName = entry.mapName
         button.known = entry.known
 
-        button.icon:SetTexture(GetDungeonTileTexture(entry.mapID, entry.spellID))
-        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local iconTexture, isSpellIcon = GetDungeonTileTexture(entry.mapID, entry.spellID)
+        button.icon:SetTexture(iconTexture)
+        if isSpellIcon then
+            button.icon:SetTexCoord(0, 1, 0, 1)
+        else
+            button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
         button.levelText:SetText(bestForMap and tostring(bestForMap.level) or "-")
-        button.dim:SetShown(not entry.known)
+        if entry.known then button.dim:Hide() else button.dim:Show() end
+
+        local totalWidth = (maxTiles * tileWidth) + (max(0, maxTiles - 1) * tileGap)
+        local rowStartX = -(totalWidth / 2)
+        local rowY = -48
 
         button:ClearAllPoints()
-        button:SetPoint("TOP", seasonPanel, "TOP", startX + ((index - 1) * (tileWidth + tileGap)) + (tileWidth / 2), rowY)
+        button:SetPoint("TOP", seasonPanel, "TOP", rowStartX + ((index - 1) * (tileWidth + tileGap)) + (tileWidth / 2), rowY)
         button:Show()
     end
 
@@ -3554,48 +4094,94 @@ local function RefreshKSMPartyTab()
     for _, unitToken in ipairs(units) do
         if UnitExists(unitToken) then
             local name = UnitName(unitToken) or "Unknown"
-            local score = TryGetUnitMythicScore(unitToken)
-            local seasonBest
+            local mapID, keyLevel
+            local classFile = GetPlayerClassFile(unitToken)
+
             if unitToken == "player" then
-                _, seasonBest = GetBestRunsFromHistory()
+                mapID, keyLevel = GetOwnedKeystoneSnapshot()
             else
-                seasonBest = TryGetBestSeasonRunForIdentifier(unitToken)
-            end
-            
-            local keystoneInfo = "n/a"
-            if unitToken == "player" then
-                local mapID, level = GetOwnedKeystoneSnapshot()
-                if level then
-                    keystoneInfo = string.format("+%d %s", level, FormatDungeonLabel(mapID))
+                local cache = GetGuildMemberData(name)
+                mapID = cache and tonumber(cache.mapID) or 0
+                keyLevel = cache and tonumber(cache.keyLevel) or 0
+                if cache and cache.class then
+                    classFile = cache.class
                 end
             end
 
-            table.insert(entries, string.format(
-                "%s | Score: %s | Best: %s | Key: %s",
-                name,
-                score and tostring(floor(score + 0.5)) or "n/a",
-                seasonBest and FormatBestRun(seasonBest) or "n/a",
-                keystoneInfo
-            ))
+            mapID = tonumber(mapID) or 0
+            keyLevel = tonumber(keyLevel) or 0
+
+            table.insert(entries, {
+                unitToken = unitToken,
+                name = name,
+                classFile = classFile,
+                mapID = mapID,
+                keyLevel = keyLevel,
+                spellID = GetPortalSpellIDForMap(mapID),
+            })
         end
     end
 
     if #entries == 0 then
-        entries[1] = "No party members found"
-    end
-
-    local y = -48
-    for index, text in ipairs(entries) do
-        local line = EnsureKSMDataLine(ui.ksmPartyLines, ui.ksmPartyContent, index)
+        local line = EnsureKSMDataLine(ui.ksmPartyLines, ui.ksmPartyContent, 1)
         line:SetWidth(570)
-        line:SetPoint("TOPLEFT", ui.ksmPartyContent, "TOPLEFT", 10, y)
-        line:SetText(text)
+        line:SetPoint("TOPLEFT", ui.ksmPartyContent, "TOPLEFT", 10, -48)
+        line:SetText("No party members found")
         line:Show()
-        y = y - 18
+        for index = 1, #ui.ksmPartyRows do
+            ui.ksmPartyRows[index]:Hide()
+        end
+        return
     end
 
-    for index = #entries + 1, #ui.ksmPartyLines do
+    for index = 1, #ui.ksmPartyLines do
         ui.ksmPartyLines[index]:Hide()
+    end
+
+    local y = -50
+    for index, entry in ipairs(entries) do
+        local row = EnsureKSMPartyRow(index)
+        local r, g, b = GetClassColorInfo(entry.classFile)
+
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", ui.ksmPartyContent, "TOPLEFT", 10, y)
+        row.nameText:SetText(entry.name)
+        row.nameText:SetTextColor(r, g, b, 1)
+
+        if SetPortraitTexture and UnitExists(entry.unitToken) then
+            SetPortraitTexture(row.portrait, entry.unitToken)
+            row.portrait:SetTexCoord(0, 1, 0, 1)
+        else
+            ApplyClassIcon(row.portrait, entry.classFile)
+        end
+
+        local iconTexture = "Interface\\Icons\\INV_Misc_QuestionMark"
+        local useSpellCoords = false
+        if entry.mapID > 0 then
+            local tileTexture, fromSpellIcon = GetDungeonTileTexture(entry.mapID, entry.spellID)
+            if tileTexture then
+                iconTexture = tileTexture
+                useSpellCoords = fromSpellIcon and true or false
+            end
+        end
+
+        row.keyTile.icon:SetTexture(iconTexture)
+        row.keyTile.icon:SetTexCoord(useSpellCoords and 0.08 or 0.06, useSpellCoords and 0.92 or 0.94, useSpellCoords and 0.08 or 0.06, useSpellCoords and 0.92 or 0.94)
+        row.keyTile.levelText:SetText(entry.keyLevel > 0 and string.format("+%d", entry.keyLevel) or "")
+        row.dungeonText:SetText(entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key data")
+
+        row.keyTile.mapID = entry.mapID
+        row.keyTile.keyLevel = entry.keyLevel
+        row.keyTile.spellID = entry.spellID
+        row.keyTile.dungeonLabel = entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key"
+        row.keyTile:SetAlpha(entry.keyLevel > 0 and 1 or 0.55)
+
+        row:Show()
+        y = y - 62
+    end
+
+    for index = #entries + 1, #ui.ksmPartyRows do
+        ui.ksmPartyRows[index]:Hide()
     end
 end
 
@@ -3762,7 +4348,7 @@ local function CreateKSMWindow()
     end
 
     local frame = CreateFrame("Frame", "KeyStoneMasterDashboard", UIParent, BackdropTemplateMixin and "BackdropTemplate")
-    frame:SetSize(600, 480)
+    frame:SetSize(600, 560)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 20)
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -3782,20 +4368,20 @@ local function CreateKSMWindow()
         edgeSize = 12,
         insets = { left = 0, right = 0, top = 0, bottom = 0 },
     })
-    frame:SetBackdropColor(0.03, 0.03, 0.04, 0.95)
-    frame:SetBackdropBorderColor(0.16, 0.16, 0.18, 0.92)
+    frame:SetBackdropColor(0.02, 0.03, 0.04, 0.62)
+    frame:SetBackdropBorderColor(0.22, 0.24, 0.28, 0.75)
     frame:Hide()
 
     local innerShade = frame:CreateTexture(nil, "BACKGROUND")
     innerShade:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
     innerShade:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-    innerShade:SetColorTexture(0, 0, 0, 0.35)
+    innerShade:SetColorTexture(0, 0, 0, 0.16)
 
     local accent = frame:CreateTexture(nil, "BORDER")
     accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
     accent:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
     accent:SetHeight(2)
-    accent:SetColorTexture(1, 0.78, 0.2, 0.45)
+    accent:SetColorTexture(0.24, 0.64, 1, 0.55)
 
     local title = CreateLine(frame, 16)
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -9)
@@ -3817,7 +4403,7 @@ local function CreateKSMWindow()
 
         local bg = button:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints(button)
-        bg:SetColorTexture(0.04, 0.04, 0.05, 0.85)
+        bg:SetColorTexture(0.04, 0.05, 0.06, 0.58)
         button.bg = bg
 
         local border = button:CreateTexture(nil, "BORDER")
@@ -3852,7 +4438,7 @@ local function CreateKSMWindow()
         blueAccent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 1, 1)
         blueAccent:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
         blueAccent:SetHeight(2)
-        blueAccent:SetColorTexture(1, 0.78, 0.2, 0)
+        blueAccent:SetColorTexture(0.24, 0.64, 1, 0)
         button.activeAccent = blueAccent
         
         local fontString = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3867,12 +4453,12 @@ local function CreateKSMWindow()
         
         button:SetScript("OnEnter", function(self)
             if not self.isSelected then
-                self.bg:SetColorTexture(0.08, 0.08, 0.1, 0.9)
+                self.bg:SetColorTexture(0.09, 0.1, 0.12, 0.76)
             end
         end)
         button:SetScript("OnLeave", function(self)
             if not self.isSelected then
-                self.bg:SetColorTexture(0.04, 0.04, 0.05, 0.85)
+                self.bg:SetColorTexture(0.04, 0.05, 0.06, 0.58)
             end
         end)
         
@@ -3885,15 +4471,15 @@ local function CreateKSMWindow()
 
     local mainContent = CreateFrame("Frame", nil, frame)
     mainContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
-    mainContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 37)
+    mainContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
 
     local partyContent = CreateFrame("Frame", nil, frame)
     partyContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
-    partyContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 37)
+    partyContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
 
     local guildContent = CreateFrame("Frame", nil, frame)
     guildContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
-    guildContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 37)
+    guildContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
 
     ui.ksmFrame = frame
     ui.ksmMainTab = mainTab
@@ -3904,8 +4490,8 @@ local function CreateKSMWindow()
     ui.ksmGuildContent = guildContent
 
     local weeklyPanel = CreateFrame("Frame", nil, mainContent, BackdropTemplateMixin and "BackdropTemplate")
-    weeklyPanel:SetSize(570, 274)
-    weeklyPanel:SetPoint("TOP", mainContent, "TOP", 0, -9)
+    weeklyPanel:SetSize(570, 280)
+    weeklyPanel:SetPoint("TOP", mainContent, "TOP", 0, -8)
     weeklyPanel:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -3913,18 +4499,19 @@ local function CreateKSMWindow()
         edgeSize = 12,
         insets = { left = 2, right = 2, top = 2, bottom = 2 },
     })
-    weeklyPanel:SetBackdropColor(0.02, 0.02, 0.03, 0.88)
-    weeklyPanel:SetBackdropBorderColor(0.1, 0.1, 0.11, 0.95)
+    weeklyPanel:SetBackdropColor(0.02, 0.03, 0.04, 0.5)
+    weeklyPanel:SetBackdropBorderColor(0.14, 0.18, 0.22, 0.0)
+    weeklyPanel:SetBackdropColor(0.02, 0.03, 0.04, 0.0)
 
     local weeklyAccent = weeklyPanel:CreateTexture(nil, "BORDER")
     weeklyAccent:SetPoint("TOPLEFT", weeklyPanel, "TOPLEFT", 10, -4)
     weeklyAccent:SetPoint("TOPRIGHT", weeklyPanel, "TOPRIGHT", -10, -4)
     weeklyAccent:SetHeight(1)
-    weeklyAccent:SetColorTexture(1, 1, 1, 0.2)
+    weeklyAccent:SetColorTexture(1, 1, 1, 0)
 
     local seasonPanel = CreateFrame("Frame", nil, mainContent, BackdropTemplateMixin and "BackdropTemplate")
-    seasonPanel:SetSize(570, 110)
-    seasonPanel:SetPoint("TOP", weeklyPanel, "BOTTOM", 0, -7)
+    seasonPanel:SetSize(570, 150)
+    seasonPanel:SetPoint("TOP", weeklyPanel, "BOTTOM", 0, -24)
     seasonPanel:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -3932,14 +4519,15 @@ local function CreateKSMWindow()
         edgeSize = 12,
         insets = { left = 2, right = 2, top = 2, bottom = 2 },
     })
-    seasonPanel:SetBackdropColor(0.02, 0.02, 0.03, 0.88)
-    seasonPanel:SetBackdropBorderColor(0.1, 0.1, 0.11, 0.95)
+    seasonPanel:SetBackdropColor(0.02, 0.03, 0.04, 0.5)
+    seasonPanel:SetBackdropBorderColor(0.14, 0.18, 0.22, 0.0)
+    seasonPanel:SetBackdropColor(0.02, 0.03, 0.04, 0.0)
 
     local seasonAccent = seasonPanel:CreateTexture(nil, "BORDER")
     seasonAccent:SetPoint("TOPLEFT", seasonPanel, "TOPLEFT", 10, -4)
     seasonAccent:SetPoint("TOPRIGHT", seasonPanel, "TOPRIGHT", -10, -4)
     seasonAccent:SetHeight(1)
-    seasonAccent:SetColorTexture(1, 1, 1, 0.2)
+    seasonAccent:SetColorTexture(1, 1, 1, 0)
 
     ui.ksmWeeklyPanel = weeklyPanel
     ui.ksmSeasonPanel = seasonPanel
@@ -3958,27 +4546,7 @@ local function CreateKSMWindow()
     -- Centered Great Vault art button
     local vaultButton = CreateFrame("Button", nil, weeklyPanel)
     vaultButton:SetSize(128, 128)
-    vaultButton:SetPoint("TOP", weeklyPanel, "TOP", 0, -100)
-
-    local vaultFrame = CreateFrame("Frame", nil, vaultButton, BackdropTemplateMixin and "BackdropTemplate")
-    vaultFrame:SetPoint("TOPLEFT", vaultButton, "TOPLEFT", -4, 4)
-    vaultFrame:SetPoint("BOTTOMRIGHT", vaultButton, "BOTTOMRIGHT", 4, -4)
-    vaultFrame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = false,
-        edgeSize = 12,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    vaultFrame:SetBackdropColor(0.02, 0.02, 0.03, 0.9)
-    vaultFrame:SetBackdropBorderColor(0.7, 0.56, 0.2, 0.75)
-    vaultFrame:SetFrameLevel(vaultButton:GetFrameLevel() - 1)
-
-    local vaultGlow = vaultButton:CreateTexture(nil, "BACKGROUND")
-    vaultGlow:SetPoint("CENTER", vaultButton, "CENTER", 0, 0)
-    vaultGlow:SetSize(188, 188)
-    vaultGlow:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-    vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.42)
+    vaultButton:SetPoint("TOP", weeklyPanel, "TOP", 0, -106)
 
     local vaultPlate = vaultButton:CreateTexture(nil, "ARTWORK")
     vaultPlate:SetAllPoints(vaultButton)
@@ -3988,7 +4556,8 @@ local function CreateKSMWindow()
     vaultLock:SetSize(40, 40)
     vaultLock:SetPoint("CENTER", vaultButton, "CENTER", 0, -2)
     vaultLock:SetTexture("Interface\\Buttons\\LockButton-Locked-Up")
-    vaultLock:SetShown(not usingCustomVaultArt)
+    local _ = usingCustomVaultArt
+    vaultLock:Hide()
 
     vaultButton.plate = vaultPlate
     vaultButton.lock = vaultLock
@@ -3998,13 +4567,11 @@ local function CreateKSMWindow()
         end
     end)
     vaultButton:SetScript("OnEnter", function(self)
-        vaultGlow:SetVertexColor(1, 0.9, 0.5, 0.58)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Open Great Vault", 1, 1, 1)
         GameTooltip:Show()
     end)
     vaultButton:SetScript("OnLeave", function(self)
-        vaultGlow:SetVertexColor(1, 0.88, 0.4, 0.42)
         GameTooltip_Hide()
     end)
 
@@ -4023,8 +4590,8 @@ local function CreateKSMWindow()
     guildHeader:SetText("Class        Player Name                 Key   Dungeon                         Rating   Portal")
 
     local requestGuildButton = CreateFrame("Button", nil, guildContent)
-    requestGuildButton:SetSize(136, 20)
-    requestGuildButton:SetPoint("TOPRIGHT", guildContent, "TOPRIGHT", -10, -9)
+    requestGuildButton:SetSize(148, 20)
+    requestGuildButton:SetPoint("BOTTOM", guildContent, "BOTTOM", 0, 8)
 
     local requestGuildButtonBg = requestGuildButton:CreateTexture(nil, "BACKGROUND")
     requestGuildButtonBg:SetAllPoints(requestGuildButton)
@@ -4039,7 +4606,7 @@ local function CreateKSMWindow()
     requestGuildButtonAccent:SetPoint("TOPLEFT", requestGuildButton, "TOPLEFT", 0, 0)
     requestGuildButtonAccent:SetPoint("TOPRIGHT", requestGuildButton, "TOPRIGHT", 0, 0)
     requestGuildButtonAccent:SetHeight(2)
-    requestGuildButtonAccent:SetColorTexture(1, 0.78, 0.2, 0.8)
+    requestGuildButtonAccent:SetColorTexture(0.24, 0.64, 1, 0.85)
 
     local requestGuildButtonText = requestGuildButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     requestGuildButtonText:SetAllPoints(requestGuildButton)
@@ -4053,9 +4620,13 @@ local function CreateKSMWindow()
         requestGuildButtonBg:SetColorTexture(0.06, 0.06, 0.06, 0.88)
     end)
     requestGuildButton:SetScript("OnClick", function()
-        RequestGuildKeysFromAllSources(true)
+        local requested = RequestGuildKeysFromAllSources(true)
         RefreshKSMWindowIfVisible()
-        PrintLocal("Requested guild keystone updates")
+        if requested then
+            PrintLocal("Requested guild keystone updates")
+        else
+            PrintLocal("Unable to request guild keys (not in a guild or request cooldown active)")
+        end
     end)
     ui.ksmGuildRequestButton = requestGuildButton
 
