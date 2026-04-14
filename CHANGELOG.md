@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Renamed addon branding from **KeyStone Master** to **KeyStoneMastery**.
 - Updated chat reply prefix to `KeyStoneMastery:`.
-- Prepared metadata for upcoming Retail `12.0.5` by setting the addon interface to `120005`.
+- Prepared Retail `12.0.5` readiness notes and validation checklist.
 - Updated project docs to call out Retail `12.0.5` forward compatibility.
 - Expanded `/ksm` dashboard as a full multi-tab Mythic+ panel (`Main`, `Party`, `Guild`).
 - Added Guild tab controls for pagination and `Hide Offline` filtering.
