@@ -75,6 +75,18 @@ function ns.ParseKeystoneFromMessage(message)
         end
     end
 
+    local lowerMessage = string.lower(message)
+    if lowerMessage:find("astral keys", 1, true) or lowerMessage:find("astralkeys", 1, true) then
+        local astralDungeonName, astralKeyLevelText = message:match("%[([^%[%]]-)%s*%((%d+)%)%]")
+        if type(astralDungeonName) == "string" and type(astralKeyLevelText) == "string" then
+            local keyLevel = tonumber(astralKeyLevelText) or 0
+            local mapID = ns.ResolveMapIDFromDungeonName(astralDungeonName) or 0
+            if mapID > 0 and keyLevel > 0 then
+                return mapID, keyLevel
+            end
+        end
+    end
+
     return nil, nil
 end
 

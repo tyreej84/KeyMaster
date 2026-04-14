@@ -80,12 +80,12 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
         return
     end
 
-    if not ctx.CanReadChatPayload(message) then
-        return
-    end
-
     local normalizedMessage = message
     if type(normalizedMessage) ~= "string" then
+        if not ctx.CanReadChatPayload(message) then
+            return
+        end
+
         local ok, converted = pcall(function(rawMessage)
             return string.format("%s", rawMessage)
         end, normalizedMessage)

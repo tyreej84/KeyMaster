@@ -39,6 +39,7 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_INSTANCE_CHAT",
     "CHAT_MSG_INSTANCE_CHAT_LEADER",
     "CHAT_MSG_GUILD",
+    "CHAT_MSG_OFFICER",
 }
 
 local runtimeEventsRegistered = false

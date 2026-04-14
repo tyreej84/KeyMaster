@@ -30,6 +30,8 @@ All notable changes to this project will be documented in this file.
 - Expanded external key-ingestion channels for AstralKeys/OpenRaid messages beyond guild-only flows to improve party/guild coverage.
 - Ensured guild chat key replies are merged into `/ksm guild` rows even when roster-derived entries already exist, with Blizzard roster/API enrichment for class, online state, and score when available.
 - Improved Blizzard rating enrichment lookups for Party/Guild tabs by trying multiple member identifiers (GUID, full name, normalized name) when score data is missing.
+- Restored guild/officer `!keys` auto-replies when chat payload coercion is required by using safer command normalization flow.
+- Added AstralKeys plaintext chat parsing for messages like `Astral Keys: [Dungeon (12)]` so guild tab rows are created from those links.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.
