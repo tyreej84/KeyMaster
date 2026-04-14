@@ -108,7 +108,7 @@ function KSM.RefreshMainTab(ctx)
     local GetDungeonTileTexture = ctx.GetDungeonTileTexture
     local PrintLocal = ctx.PrintLocal
     local IsPortalSpellKnown = ctx.IsPortalSpellKnown
-    local TryCastPortalSpell = ctx.TryCastPortalSpell
+    local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
 
     local weeklyPanel = ui.ksmWeeklyPanel or ui.ksmMainContent
     local seasonPanel = ui.ksmSeasonPanel or ui.ksmMainContent
@@ -398,7 +398,7 @@ function KSM.RefreshMainTab(ctx)
         local entry = entries[index]
         local button = ui.ksmPortalButtons[index]
         if not button then
-            button = CreateFrame("Button", nil, seasonPanel)
+            button = CreateFrame("Button", nil, seasonPanel, "SecureActionButtonTemplate")
             button:SetSize(tileWidth, tileHeight)
 
             local icon = button:CreateTexture(nil, "ARTWORK")
@@ -424,10 +424,6 @@ function KSM.RefreshMainTab(ctx)
                 if not (IsPortalSpellKnown and IsPortalSpellKnown(self.spellID)) then
                     PrintLocal("Portal is locked for this dungeon")
                     return
-                end
-
-                if not (TryCastPortalSpell and TryCastPortalSpell(self.spellID)) then
-                    PrintLocal("Portal cast failed")
                 end
             end)
 
@@ -461,7 +457,7 @@ function KSM.RefreshMainTab(ctx)
         button.overallScore = score
         button.spellID = entry.spellID
         button.mapName = entry.mapName
-        button.known = entry.known
+        button.known = ConfigurePortalActionButton and ConfigurePortalActionButton(button, entry.spellID) or entry.known
 
         local iconTexture, isSpellIcon = GetDungeonTileTexture(entry.mapID, entry.spellID)
         button.icon:SetTexture(iconTexture)
@@ -471,7 +467,7 @@ function KSM.RefreshMainTab(ctx)
             button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         end
         button.levelText:SetText(bestForMap and tostring(bestForMap.level) or "-")
-        if entry.known then button.dim:Hide() else button.dim:Show() end
+        if button.known then button.dim:Hide() else button.dim:Show() end
 
         local totalWidth = (maxTiles * tileWidth) + (max(0, maxTiles - 1) * tileGap)
         local rowStartX = -(totalWidth / 2)
@@ -505,6 +501,7 @@ function KSM.RefreshPartyTab(ctx)
     local ApplyClassIcon = ctx.ApplyClassIcon
     local GetDungeonTileTexture = ctx.GetDungeonTileTexture
     local FormatDungeonLabel = ctx.FormatDungeonLabel
+    local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
 
     local entries = {}
     local units = { "player", "party1", "party2", "party3", "party4" }
@@ -601,6 +598,9 @@ function KSM.RefreshPartyTab(ctx)
         row.keyTile.mapID = entry.mapID
         row.keyTile.keyLevel = entry.keyLevel
         row.keyTile.spellID = entry.spellID
+        if ConfigurePortalActionButton then
+            ConfigurePortalActionButton(row.keyTile, entry.spellID)
+        end
         row.keyTile.dungeonLabel = entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key"
         row.keyTile:SetAlpha(entry.keyLevel > 0 and 1 or 0.55)
         if row.cardBG then
@@ -644,6 +644,7 @@ function KSM.RefreshGuildTab(ctx)
     local ApplyClassIcon = ctx.ApplyClassIcon
     local FormatDungeonLabel = ctx.FormatDungeonLabel
     local IsPortalSpellKnown = ctx.IsPortalSpellKnown
+    local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
 
     if ui.ksmGuildHideOfflineCheck then
         ui.ksmGuildHideOfflineCheck:SetChecked(ui.ksmHideOffline == true)
@@ -875,12 +876,18 @@ function KSM.RefreshGuildTab(ctx)
 
         if entry.spellID then
             row.teleportButton.spellID = entry.spellID
+            local known = ConfigurePortalActionButton and ConfigurePortalActionButton(row.teleportButton, entry.spellID)
             row.teleportButton:Show()
             row.teleportButton.label:SetText("Teleport")
-            local known = IsPortalSpellKnown and IsPortalSpellKnown(entry.spellID)
+            if known == nil then
+                known = IsPortalSpellKnown and IsPortalSpellKnown(entry.spellID)
+            end
             row.teleportButton.label:SetTextColor(known and 1 or 0.55, known and 1 or 0.55, known and 1 or 0.55, 1)
         else
             row.teleportButton.spellID = nil
+            if ConfigurePortalActionButton then
+                ConfigurePortalActionButton(row.teleportButton, nil)
+            end
             row.teleportButton:Hide()
         end
 

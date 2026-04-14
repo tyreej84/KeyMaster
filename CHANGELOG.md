@@ -36,6 +36,7 @@ All notable changes to this project will be documented in this file.
 - Added fail-safe guild command replies so `!keys`/`!score`/`!best` still respond with fallback text when runtime command parsing or reply generation returns nil.
 - Updated `!keys` reply building to fall back to owned snapshot text (`+level dungeon`) when hyperlink creation is unavailable, preventing false "Keystone unavailable" replies.
 - Fixed portal click-casting reliability in `/ksm` Main/Party/Guild views by using a shared known-spell check (`IsSpellKnownOrOverridesKnown`/`IsPlayerSpell`) and robust cast fallback path.
+- Replaced direct portal cast calls with secure spell action-button bindings in Main/Party/Guild portal buttons to resolve BugGrabber `ADDON_ACTION_FORBIDDEN` protected-call errors.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.

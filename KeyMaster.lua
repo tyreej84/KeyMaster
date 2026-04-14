@@ -2683,6 +2683,33 @@ local function TryCastPortalSpell(spellID)
     return false
 end
 
+local function ConfigurePortalActionButton(button, spellID)
+    if not button then
+        return false
+    end
+
+    button.spellID = spellID
+    local known = IsPortalSpellKnown(spellID)
+
+    if not button.SetAttribute then
+        return known
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        return known
+    end
+
+    if known then
+        button:SetAttribute("type", "spell")
+        button:SetAttribute("spell", spellID)
+    else
+        button:SetAttribute("type", nil)
+        button:SetAttribute("spell", nil)
+    end
+
+    return known
+end
+
 local function GetCurrentSeasonPortalEntries()
     local entries = {}
     local addedByMapID = {}
@@ -3228,7 +3255,7 @@ local function EnsureKSMGuildRow(index)
     ratingText:SetJustifyH("LEFT")
     row.ratingText = ratingText
 
-    local teleportButton = CreateFrame("Button", nil, row)
+    local teleportButton = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     teleportButton:SetSize(78, 18)
     teleportButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 
@@ -3254,10 +3281,6 @@ local function EnsureKSMGuildRow(index)
         if not IsPortalSpellKnown(self.spellID) then
             PrintLocal("You do not know this portal")
             return
-        end
-
-        if not TryCastPortalSpell(self.spellID) then
-            PrintLocal("Portal cast failed")
         end
     end)
 
@@ -3321,7 +3344,7 @@ local function EnsureKSMPartyRow(index)
     scoreText:SetTextColor(0.72, 0.86, 1, 1)
     row.scoreText = scoreText
 
-    local keyTile = CreateFrame("Button", nil, row)
+    local keyTile = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     keyTile:SetSize(46, 46)
     keyTile:SetPoint("TOPLEFT", row, "TOPLEFT", 336, -8)
 
@@ -3356,10 +3379,6 @@ local function EnsureKSMPartyRow(index)
         if not IsPortalSpellKnown(self.spellID) then
             PrintLocal("You do not know this portal")
             return
-        end
-
-        if not TryCastPortalSpell(self.spellID) then
-            PrintLocal("Portal cast failed")
         end
     end)
 
@@ -3411,6 +3430,7 @@ local function BuildKSMContext()
         PrintLocal = PrintLocal,
         IsPortalSpellKnown = IsPortalSpellKnown,
         TryCastPortalSpell = TryCastPortalSpell,
+        ConfigurePortalActionButton = ConfigurePortalActionButton,
         TryGetUnitMythicScore = TryGetUnitMythicScore,
         GetGuildMemberData = GetGuildMemberData,
         GetPlayerClassFile = GetPlayerClassFile,
