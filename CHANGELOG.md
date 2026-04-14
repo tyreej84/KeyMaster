@@ -28,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - Strengthened guild sync payload parsing and sanitization for malformed addon messages.
 - Added AstralKeys `sync*` batch payload parsing (in addition to `updateV*`) so guild key snapshots populate reliably.
 - Expanded external key-ingestion channels for AstralKeys/OpenRaid messages beyond guild-only flows to improve party/guild coverage.
+- Ensured guild chat key replies are merged into `/ksm guild` rows even when roster-derived entries already exist, with Blizzard roster/API enrichment for class, online state, and score when available.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.

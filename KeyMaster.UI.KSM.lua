@@ -652,6 +652,8 @@ function KSM.RefreshGuildTab(ctx)
     RequestGuildKeysFromAllSources(false)
 
     local entries = {}
+    local entryByName = {}
+    local rosterByName = {}
     local playerName = GetNormalizedPlayerName(UnitName("player"))
     local playerScore = floor((GetMythicPlusScore() or 0) + 0.5)
     local playerMapID, playerKeyLevel = GetOwnedKeystoneSnapshot()
@@ -665,6 +667,11 @@ function KSM.RefreshGuildTab(ctx)
             local cache = GetGuildMemberData(name) or {}
             local isPlayer = name == playerName
             local guid = select(17, GetGuildRosterInfo(index))
+            rosterByName[name] = {
+                online = online and true or false,
+                classFile = classFile,
+                guid = guid,
+            }
 
             local mapID = isPlayer and playerMapID or cache.mapID
             local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
@@ -684,7 +691,7 @@ function KSM.RefreshGuildTab(ctx)
             local isRecent = IsGuildMemberRecent(index, online and true or false, cache)
 
             if isPlayer or (isRecent and hasCachedData) then
-                table.insert(entries, {
+                local rowEntry = {
                     name = name or fullName,
                     class = isPlayer and playerClass or cache.class or classFile,
                     mapID = normalizedMapID,
@@ -692,36 +699,50 @@ function KSM.RefreshGuildTab(ctx)
                     rating = normalizedRating,
                     spellID = GetPortalSpellIDForMap(normalizedMapID),
                     online = isPlayer or (online and true or false),
-                })
+                }
+                table.insert(entries, rowEntry)
+                entryByName[rowEntry.name] = true
             end
         end
     end
 
-    if #entries == 0 then
-        local store = GetGuildMemberStore()
-        for cachedName, cache in pairs(store) do
-            local normalized = GetNormalizedPlayerName(cachedName) or cachedName
+    local store = GetGuildMemberStore()
+    for cachedName, cache in pairs(store) do
+        local normalized = GetNormalizedPlayerName(cachedName) or cachedName
+        if not entryByName[normalized] then
             local isPlayer = normalized == playerName
+            local roster = rosterByName[normalized]
             local mapID = isPlayer and playerMapID or cache.mapID
             local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
             local rating = isPlayer and playerScore or cache.rating
             local normalizedMapID = tonumber(mapID) or 0
             local normalizedKeyLevel = tonumber(keyLevel) or 0
             local normalizedRating = tonumber(rating) or 0
+
+            if (not normalizedRating or normalizedRating <= 0) and roster and roster.guid then
+                local apiScore = TryGetMythicScoreForIdentifier(roster.guid)
+                if apiScore then
+                    normalizedRating = floor(apiScore + 0.5)
+                end
+            end
+
             local updatedAt = tonumber(cache and cache.updatedAt)
             local now = GetServerTime and GetServerTime() or time()
             local isRecent = updatedAt and ((now - updatedAt) <= (KSM_GUILD_RECENT_DAYS * 86400)) or false
+            local hasCachedData = normalizedMapID > 0 or normalizedKeyLevel > 0 or normalizedRating > 0
 
-            if isPlayer or (isRecent and (normalizedMapID > 0 or normalizedKeyLevel > 0 or normalizedRating > 0)) then
-                table.insert(entries, {
+            if isPlayer or (isRecent and hasCachedData) then
+                local rowEntry = {
                     name = normalized,
-                    class = isPlayer and playerClass or cache.class,
+                    class = isPlayer and playerClass or cache.class or (roster and roster.classFile),
                     mapID = normalizedMapID,
                     keyLevel = normalizedKeyLevel,
                     rating = normalizedRating,
                     spellID = GetPortalSpellIDForMap(normalizedMapID),
-                    online = isPlayer,
-                })
+                    online = isPlayer or (roster and roster.online or false),
+                }
+                table.insert(entries, rowEntry)
+                entryByName[rowEntry.name] = true
             end
         end
     end
