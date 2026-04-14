@@ -1,0 +1,112 @@
+local ns = _G.KeyMasterNS
+if type(ns) ~= "table" then
+    ns = {}
+    _G.KeyMasterNS = ns
+end
+
+local Chat = {}
+ns.Chat = Chat
+
+function Chat.BuildReplyForCommand(ctx, command)
+    if type(command) ~= "string" or command == "" then
+        return nil
+    end
+
+    if command == ctx.KEY_TEXT_COMMAND or command == ctx.KEYS_TEXT_COMMAND then
+        return ctx.BuildKeystoneReply()
+    end
+
+    if command == ctx.SCORE_TEXT_COMMAND or command == ctx.SCORES_TEXT_COMMAND then
+        return ctx.BuildScoreReply()
+    end
+
+    if command == ctx.BEST_TEXT_COMMAND then
+        return ctx.BuildBestReply()
+    end
+
+    return nil
+end
+
+function Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, message, sender)
+    if type(message) ~= "string" or message == "" or type(sender) ~= "string" or sender == "" then
+        return
+    end
+
+    local mapID, keyLevel = ctx.ParseKeystoneFromMessage(message)
+    if type(mapID) ~= "number" or mapID <= 0 or type(keyLevel) ~= "number" or keyLevel <= 0 then
+        return
+    end
+
+    ctx.SaveGuildMemberData(sender, {
+        mapID = mapID,
+        keyLevel = keyLevel,
+        source = "guild-chat-link",
+    })
+end
+
+function Chat.ExtractCommandWithFallback(ctx, message)
+    local command = ctx.ExtractRequestCommand and ctx.ExtractRequestCommand(message) or nil
+    if command then
+        return command
+    end
+
+    if type(message) ~= "string" then
+        return nil
+    end
+
+    local normalized = ctx.strtrim(ctx.strlower(message))
+        :gsub("|c%x%x%x%x%x%x%x%x", "")
+        :gsub("|r", "")
+
+    local parsed = normalized:match("^(![%a]+)") or normalized:match("%s(![%a]+)")
+    if type(parsed) ~= "string" then
+        return nil
+    end
+
+    parsed = parsed:gsub("[,%.%?!;:]+$", "")
+    if parsed == ctx.KEY_TEXT_COMMAND
+        or parsed == ctx.KEYS_TEXT_COMMAND
+        or parsed == ctx.SCORE_TEXT_COMMAND
+        or parsed == ctx.SCORES_TEXT_COMMAND
+        or parsed == ctx.BEST_TEXT_COMMAND then
+        return parsed
+    end
+
+    return nil
+end
+
+function Chat.HandleChatMessage(ctx, event, message, sender)
+    if not ctx.CHAT_EVENTS[event] then
+        return
+    end
+
+    if not ctx.CanReadChatPayload(message) then
+        return
+    end
+
+    Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, message, sender)
+
+    local command = Chat.ExtractCommandWithFallback(ctx, message)
+    if not command then
+        ctx.RefreshKSMWindowIfVisible()
+        return
+    end
+
+    if event == "CHAT_MSG_GUILD" and (command == ctx.KEY_TEXT_COMMAND or command == ctx.KEYS_TEXT_COMMAND) then
+        -- !keys should only trigger KeyStoneMastery sync behavior.
+        ctx.RequestGuildSnapshots()
+    end
+
+    local ok, reply = pcall(Chat.BuildReplyForCommand, ctx, command)
+    if not ok or not reply then
+        return
+    end
+
+    local chatType = ctx.CHAT_EVENT_TO_CHANNEL[event]
+    if not chatType then
+        return
+    end
+
+    ctx.SendOrQueueChatMessage(reply, chatType)
+    ctx.RefreshKSMWindowIfVisible()
+end

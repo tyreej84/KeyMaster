@@ -1504,96 +1504,36 @@ local function RequestAbandonKeyVote()
     end
 end
 
+local ChatModule = _G.KeyMasterNS and _G.KeyMasterNS.Chat
 
-local function BuildReplyForCommand(command)
-    if type(command) ~= "string" or command == "" then
-        return nil
-    end
-
-    if command == KEY_TEXT_COMMAND or command == KEYS_TEXT_COMMAND then
-        return BuildKeystoneReply()
-    end
-
-    if command == SCORE_TEXT_COMMAND or command == SCORES_TEXT_COMMAND then
-        return BuildScoreReply()
-    end
-
-    if command == BEST_TEXT_COMMAND then
-        return BuildBestReply()
-    end
-
-    return nil
-end
-
-
-local function UpdateGuildMemberFromChatKeystoneLink(message, sender)
-    if type(message) ~= "string" or message == "" or type(sender) ~= "string" or sender == "" then
-        return
-    end
-
-    local mapID, keyLevel = ParseKeystoneFromMessage(message)
-    if type(mapID) ~= "number" or mapID <= 0 or type(keyLevel) ~= "number" or keyLevel <= 0 then
-        return
-    end
-
-    SaveGuildMemberData(sender, {
-        mapID = mapID,
-        keyLevel = keyLevel,
-        source = "guild-chat-link",
-    })
+local function BuildChatContext()
+    return {
+        KEY_TEXT_COMMAND = KEY_TEXT_COMMAND,
+        KEYS_TEXT_COMMAND = KEYS_TEXT_COMMAND,
+        SCORE_TEXT_COMMAND = SCORE_TEXT_COMMAND,
+        SCORES_TEXT_COMMAND = SCORES_TEXT_COMMAND,
+        BEST_TEXT_COMMAND = BEST_TEXT_COMMAND,
+        CHAT_EVENTS = CHAT_EVENTS,
+        CHAT_EVENT_TO_CHANNEL = CHAT_EVENT_TO_CHANNEL,
+        strtrim = strtrim,
+        strlower = strlower,
+        BuildKeystoneReply = BuildKeystoneReply,
+        BuildScoreReply = BuildScoreReply,
+        BuildBestReply = BuildBestReply,
+        ParseKeystoneFromMessage = ParseKeystoneFromMessage,
+        SaveGuildMemberData = SaveGuildMemberData,
+        ExtractRequestCommand = ExtractRequestCommand,
+        CanReadChatPayload = CanReadChatPayload,
+        RequestGuildSnapshots = RequestGuildSnapshots,
+        SendOrQueueChatMessage = SendOrQueueChatMessage,
+        RefreshKSMWindowIfVisible = RefreshKSMWindowIfVisible,
+    }
 end
 
 local function HandleChatMessage(event, message, sender)
-    if not CHAT_EVENTS[event] then
-        return
+    if ChatModule and ChatModule.HandleChatMessage then
+        ChatModule.HandleChatMessage(BuildChatContext(), event, message, sender)
     end
-
-    if not CanReadChatPayload(message) then
-        return
-    end
-
-    UpdateGuildMemberFromChatKeystoneLink(message, sender)
-
-    local command = ExtractRequestCommand and ExtractRequestCommand(message) or nil
-    if not command and type(message) == "string" then
-        -- Fallback parser keeps command replies working even if module parser is unavailable.
-        local normalized = strtrim(strlower(message))
-            :gsub("|c%x%x%x%x%x%x%x%x", "")
-            :gsub("|r", "")
-        local parsed = normalized:match("^(![%a]+)") or normalized:match("%s(![%a]+)")
-        if type(parsed) == "string" then
-            parsed = parsed:gsub("[,%.%?!;:]+$", "")
-            if parsed == KEY_TEXT_COMMAND
-                or parsed == KEYS_TEXT_COMMAND
-                or parsed == SCORE_TEXT_COMMAND
-                or parsed == SCORES_TEXT_COMMAND
-                or parsed == BEST_TEXT_COMMAND then
-                command = parsed
-            end
-        end
-    end
-    if not command then
-        RefreshKSMWindowIfVisible()
-        return
-    end
-
-    if event == "CHAT_MSG_GUILD" and (command == KEY_TEXT_COMMAND or command == KEYS_TEXT_COMMAND) then
-        -- !keys should only trigger KeyStoneMastery sync behavior.
-        RequestGuildSnapshots()
-    end
-
-    local ok, reply = pcall(BuildReplyForCommand, command)
-    if not ok or not reply then
-        return
-    end
-
-    local chatType = CHAT_EVENT_TO_CHANNEL[event]
-    if not chatType then
-        return
-    end
-
-    SendOrQueueChatMessage(reply, chatType)
-    RefreshKSMWindowIfVisible()
 end
 
 local function NormalizeAffixIDs(...)

@@ -9,5 +9,6 @@ KeyMaster.Constants.lua
 KeyMaster.Data.lua
 KeyMaster.Utils.lua
 KeyMaster.GuildUtils.lua
+KeyMaster.Chat.lua
 KeyMaster.UI.KSM.lua
 KeyMaster.lua
