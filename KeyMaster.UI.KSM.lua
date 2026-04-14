@@ -689,6 +689,12 @@ function KSM.RefreshGuildTab(ctx)
         local fullName, _, _, _, _, _, _, _, _, online, _, classFile = GetGuildRosterInfo(index)
         if fullName then
             local name = GetNormalizedPlayerName(fullName)
+            if not name or name == "" then
+                name = type(fullName) == "string" and fullName ~= "" and fullName or nil
+            end
+            if not name then
+                goto continue
+            end
             local cache = GetGuildMemberData(name) or {}
             local isPlayer = name == playerName
             local guid = select(17, GetGuildRosterInfo(index))
@@ -712,10 +718,9 @@ function KSM.RefreshGuildTab(ctx)
             local normalizedMapID = tonumber(mapID) or 0
             local normalizedKeyLevel = tonumber(keyLevel) or 0
             local normalizedRating = tonumber(rating) or 0
-            local hasCachedData = normalizedMapID > 0 or normalizedKeyLevel > 0 or normalizedRating > 0
             local isRecent = IsGuildMemberRecent(index, online and true or false, cache)
 
-            if isPlayer or (isRecent and hasCachedData) then
+            if isPlayer or isRecent then
                 local rowEntry = {
                     name = name or fullName,
                     class = isPlayer and playerClass or cache.class or classFile,
@@ -729,6 +734,22 @@ function KSM.RefreshGuildTab(ctx)
                 entryByName[rowEntry.name] = true
             end
         end
+        ::continue::
+    end
+
+    if playerName and not entryByName[playerName] then
+        local fallbackMapID = tonumber(playerMapID) or 0
+        local fallbackKeyLevel = tonumber(playerKeyLevel) or 0
+        table.insert(entries, {
+            name = playerName,
+            class = playerClass,
+            mapID = fallbackMapID,
+            keyLevel = fallbackKeyLevel,
+            rating = tonumber(playerScore) or 0,
+            spellID = GetPortalSpellIDForMap(fallbackMapID),
+            online = true,
+        })
+        entryByName[playerName] = true
     end
 
     local store = GetGuildMemberStore()

@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Fixed portal click-casting reliability in `/ksm` Main/Party/Guild views by using a shared known-spell check (`IsSpellKnownOrOverridesKnown`/`IsPlayerSpell`) and robust cast fallback path.
 - Replaced direct portal cast calls with secure spell action-button bindings in Main/Party/Guild portal buttons to resolve BugGrabber `ADDON_ACTION_FORBIDDEN` protected-call errors.
 - Removed legacy direct-cast behavior from the old portal helper so stale call paths cannot invoke protected cast APIs.
+- Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.
