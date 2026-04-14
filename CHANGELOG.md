@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - Replaced direct portal cast calls with secure spell action-button bindings in Main/Party/Guild portal buttons to resolve BugGrabber `ADDON_ACTION_FORBIDDEN` protected-call errors.
 - Removed legacy direct-cast behavior from the old portal helper so stale call paths cannot invoke protected cast APIs.
 - Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
+- Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.

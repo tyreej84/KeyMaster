@@ -692,49 +692,47 @@ function KSM.RefreshGuildTab(ctx)
             if not name or name == "" then
                 name = type(fullName) == "string" and fullName ~= "" and fullName or nil
             end
-            if not name then
-                goto continue
-            end
-            local cache = GetGuildMemberData(name) or {}
-            local isPlayer = name == playerName
-            local guid = select(17, GetGuildRosterInfo(index))
-            rosterByName[name] = {
-                online = online and true or false,
-                classFile = classFile,
-                guid = guid,
-            }
+            if name then
+                local cache = GetGuildMemberData(name) or {}
+                local isPlayer = name == playerName
+                local guid = select(17, GetGuildRosterInfo(index))
+                rosterByName[name] = {
+                    online = online and true or false,
+                    classFile = classFile,
+                    guid = guid,
+                }
 
-            local mapID = isPlayer and playerMapID or cache.mapID
-            local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
-            local rating = isPlayer and playerScore or cache.rating
+                local mapID = isPlayer and playerMapID or cache.mapID
+                local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
+                local rating = isPlayer and playerScore or cache.rating
 
-            if not rating or rating <= 0 then
-                local apiScore = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, guid, fullName, name)
-                if apiScore then
-                    rating = floor(apiScore + 0.5)
+                if not rating or rating <= 0 then
+                    local apiScore = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, guid, fullName, name)
+                    if apiScore then
+                        rating = floor(apiScore + 0.5)
+                    end
+                end
+
+                local normalizedMapID = tonumber(mapID) or 0
+                local normalizedKeyLevel = tonumber(keyLevel) or 0
+                local normalizedRating = tonumber(rating) or 0
+                local isRecent = IsGuildMemberRecent(index, online and true or false, cache)
+
+                if isPlayer or isRecent then
+                    local rowEntry = {
+                        name = name or fullName,
+                        class = isPlayer and playerClass or cache.class or classFile,
+                        mapID = normalizedMapID,
+                        keyLevel = normalizedKeyLevel,
+                        rating = normalizedRating,
+                        spellID = GetPortalSpellIDForMap(normalizedMapID),
+                        online = isPlayer or (online and true or false),
+                    }
+                    table.insert(entries, rowEntry)
+                    entryByName[rowEntry.name] = true
                 end
             end
-
-            local normalizedMapID = tonumber(mapID) or 0
-            local normalizedKeyLevel = tonumber(keyLevel) or 0
-            local normalizedRating = tonumber(rating) or 0
-            local isRecent = IsGuildMemberRecent(index, online and true or false, cache)
-
-            if isPlayer or isRecent then
-                local rowEntry = {
-                    name = name or fullName,
-                    class = isPlayer and playerClass or cache.class or classFile,
-                    mapID = normalizedMapID,
-                    keyLevel = normalizedKeyLevel,
-                    rating = normalizedRating,
-                    spellID = GetPortalSpellIDForMap(normalizedMapID),
-                    online = isPlayer or (online and true or false),
-                }
-                table.insert(entries, rowEntry)
-                entryByName[rowEntry.name] = true
-            end
         end
-        ::continue::
     end
 
     if playerName and not entryByName[playerName] then
