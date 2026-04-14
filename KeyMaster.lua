@@ -1367,6 +1367,7 @@ local ChatModule = _G.KeyMasterNS and _G.KeyMasterNS.Chat
 
 local function BuildChatContext()
     return {
+        REPLY_PREFIX = REPLY_PREFIX,
         KEY_TEXT_COMMAND = KEY_TEXT_COMMAND,
         KEYS_TEXT_COMMAND = KEYS_TEXT_COMMAND,
         SCORE_TEXT_COMMAND = SCORE_TEXT_COMMAND,

@@ -60,6 +60,15 @@ function Chat.ExtractCommandWithFallback(ctx, message)
 
     local parsed = normalized:match("^(![%a]+)") or normalized:match("%s(![%a]+)")
     if type(parsed) ~= "string" then
+        if normalized:find("!keys", 1, true) then
+            return ctx.KEYS_TEXT_COMMAND
+        end
+        if normalized:find("!score", 1, true) or normalized:find("!scores", 1, true) then
+            return ctx.SCORES_TEXT_COMMAND
+        end
+        if normalized:find("!best", 1, true) then
+            return ctx.BEST_TEXT_COMMAND
+        end
         return nil
     end
 
@@ -70,6 +79,23 @@ function Chat.ExtractCommandWithFallback(ctx, message)
         or parsed == ctx.SCORES_TEXT_COMMAND
         or parsed == ctx.BEST_TEXT_COMMAND then
         return parsed
+    end
+
+    return nil
+end
+
+local function BuildFallbackReply(ctx, command)
+    local prefix = ctx.REPLY_PREFIX or "KeyStoneMastery:"
+    if command == ctx.KEY_TEXT_COMMAND or command == ctx.KEYS_TEXT_COMMAND then
+        return string.format("%s Keystone unavailable", prefix)
+    end
+
+    if command == ctx.SCORE_TEXT_COMMAND or command == ctx.SCORES_TEXT_COMMAND then
+        return string.format("%s M+ Score unavailable", prefix)
+    end
+
+    if command == ctx.BEST_TEXT_COMMAND then
+        return string.format("%s Best run unavailable", prefix)
     end
 
     return nil
@@ -106,7 +132,10 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
 
     local ok, reply = pcall(Chat.BuildReplyForCommand, ctx, command)
     if not ok or not reply then
-        return
+        reply = BuildFallbackReply(ctx, command)
+        if not reply then
+            return
+        end
     end
 
     local chatType = ctx.CHAT_EVENT_TO_CHANNEL[event]
