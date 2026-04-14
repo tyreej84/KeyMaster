@@ -1,4 +1,4 @@
-# KeyStone Master
+# KeyStoneMastery
 
 A Mythic+ utility addon for World of Warcraft with chat replies and a live dungeon overlay.
 
@@ -19,11 +19,11 @@ A Mythic+ utility addon for World of Warcraft with chat replies and a live dunge
 | `!score` | Your current Mythic+ score |
 | `!best` | Your best key this week and this season |
 | `/km` or `/keymaster` | Show addon status and UI command help |
-| `/km settings` | Open the KeyStone Master settings panel |
-| `/km status` | Show current KeyStone Master UI state (enabled, hidden, locked, scale, anchor) |
-| `/km ui on` | Enable the KeyStone Master Mythic+ overlay |
-| `/km ui off` | Disable the KeyStone Master Mythic+ overlay and use Blizzard's default UI |
-| `/km ui restore` | Re-enable and reset the KeyStone Master UI to the default top-right position |
+| `/km settings` | Open the KeyStoneMastery settings panel |
+| `/km status` | Show current KeyStoneMastery UI state (enabled, hidden, locked, scale, anchor) |
+| `/km ui on` | Enable the KeyStoneMastery Mythic+ overlay |
+| `/km ui off` | Disable the KeyStoneMastery Mythic+ overlay and use Blizzard's default UI |
+| `/km ui restore` | Re-enable and reset the KeyStoneMastery UI to the default top-right position |
 | `/km unlock` | Unlock the Mythic+ overlay so it can be dragged into position |
 | `/km lock` | Lock the Mythic+ overlay in place |
 | `/km hide` | Hide the Mythic+ overlay |
@@ -41,7 +41,7 @@ A Mythic+ utility addon for World of Warcraft with chat replies and a live dunge
    ```
    World of Warcraft/_retail_/Interface/AddOns/
    ```
-3. Launch WoW and enable **KeyStone Master** in the addon list.
+3. Launch WoW and enable **KeyStoneMastery** in the addon list.
 4. Type `/reload` in-game.
 
 ## Notes

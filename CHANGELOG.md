@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-04-14
+
+### Changed
+- Renamed addon branding from **KeyStone Master** to **KeyStoneMastery**.
+- Updated chat reply prefix to `KeyStoneMastery:`.
+- Expanded `/ksm` dashboard as a full multi-tab Mythic+ panel (`Main`, `Party`, `Guild`).
+- Added Guild tab controls for pagination and `Hide Offline` filtering.
+- Guild request button now triggers active guild key pulls across enabled sources.
+- Kept `KeyMaster.lua` as the main runtime file and split shared constants/data into dedicated modules:
+  - `KeyMaster.Constants.lua`
+  - `KeyMaster.Data.lua`
+- Split reusable parsing/formatting/request helpers into `KeyMaster.Utils.lua`.
+- Split guild safety/recent-activity helpers into `KeyMaster.GuildUtils.lua`.
+- Extracted `/ksm` tab refresh logic into `KeyMaster.UI.KSM.lua` to keep `KeyMaster.lua` focused on orchestration.
+- Updated TOC load order so shared modules load before `KeyMaster.lua`.
+
+### Fixed
+- Reduced risk of Lua chunk-local overflow in the main file by moving large static tables out of `KeyMaster.lua`.
+- Added passive guild key cache ingestion from observed keystone chat links and external key-sharing payloads.
+- Restricted `!keys` handling to KeyMaster sync behavior while leaving active external pulls to the Guild request path.
+
+### Packaging
+- Built release archive at `Releases/1.7.0/KeyMaster.zip`.
+
 ## [1.6.8] - 2026-04-13
 
 ### Changed
