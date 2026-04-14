@@ -2651,7 +2651,7 @@ local function IsPortalSpellKnown(spellID)
         return true
     end
 
-    if C_SpellBook and C_SpellBook.IsSpellKnown then
+    if type(C_SpellBook) == "table" and type(C_SpellBook.IsSpellKnown) == "function" then
         local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
         if ok and known then
             return true
@@ -2666,7 +2666,7 @@ local function GetPortalSecureSpellToken(spellID)
         return nil
     end
 
-    if C_Spell and C_Spell.GetSpellName then
+    if type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function" then
         local ok, name = pcall(C_Spell.GetSpellName, spellID)
         if ok and type(name) == "string" and name ~= "" then
             return name
