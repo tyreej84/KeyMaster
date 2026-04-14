@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 - Improved Blizzard rating enrichment lookups for Party/Guild tabs by trying multiple member identifiers (GUID, full name, normalized name) when score data is missing.
 - Restored guild/officer `!keys` auto-replies when chat payload coercion is required by using safer command normalization flow.
 - Added AstralKeys plaintext chat parsing for messages like `Astral Keys: [Dungeon (12)]` so guild tab rows are created from those links.
+- Expanded generic guild chat keystone parsing to capture additional addon/user-facing formats (including `(+12)` and `+12` variants) so addon responders reliably populate `/ksm guild`.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.

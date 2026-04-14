@@ -75,6 +75,35 @@ function ns.ParseKeystoneFromMessage(message)
         end
     end
 
+    -- Generic fallback for addon/user-facing link text variants.
+    local genericName, genericLevelText = message:match("%[([^%[%]]-)%s*%(([%+]?%d+)%)%]")
+    if type(genericName) == "string" and type(genericLevelText) == "string" then
+        local normalizedName = trim(genericName)
+        normalizedName = normalizedName:gsub("^[Kk]eystone:%s*", "")
+        normalizedName = normalizedName:gsub("^[Mm]ythic%s+[Kk]eystone:%s*", "")
+        normalizedName = trim(normalizedName)
+
+        local keyLevel = tonumber((genericLevelText:gsub("^%+", ""))) or 0
+        local mapID = ns.ResolveMapIDFromDungeonName(normalizedName) or 0
+        if mapID > 0 and keyLevel > 0 then
+            return mapID, keyLevel
+        end
+    end
+
+    local plusName, plusLevelText = message:match("%[([^%[%]]-)%s*%+(%d+)%]")
+    if type(plusName) == "string" and type(plusLevelText) == "string" then
+        local normalizedName = trim(plusName)
+        normalizedName = normalizedName:gsub("^[Kk]eystone:%s*", "")
+        normalizedName = normalizedName:gsub("^[Mm]ythic%s+[Kk]eystone:%s*", "")
+        normalizedName = trim(normalizedName)
+
+        local keyLevel = tonumber(plusLevelText) or 0
+        local mapID = ns.ResolveMapIDFromDungeonName(normalizedName) or 0
+        if mapID > 0 and keyLevel > 0 then
+            return mapID, keyLevel
+        end
+    end
+
     local lowerMessage = string.lower(message)
     if lowerMessage:find("astral keys", 1, true) or lowerMessage:find("astralkeys", 1, true) then
         local astralDungeonName, astralKeyLevelText = message:match("%[([^%[%]]-)%s*%((%d+)%)%]")
