@@ -157,5 +157,13 @@ function ns.ExtractRequestCommand(message)
 end
 
 function ns.CanReadChatPayload(message)
-    return type(message) == "string" and message ~= ""
+    if type(message) == "string" then
+        return message ~= ""
+    end
+
+    local ok, normalized = pcall(function(rawMessage)
+        return string.format("%s", rawMessage)
+    end, message)
+
+    return ok and type(normalized) == "string" and normalized ~= ""
 end

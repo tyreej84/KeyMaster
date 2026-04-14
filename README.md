@@ -2,6 +2,8 @@
 
 A Mythic+ utility addon for World of Warcraft with chat replies and a live dungeon overlay.
 
+Target client/API: Retail 12.0.5 (forward-ready; compatible with 12.0.1+).
+
 ## What it does
 
 - Type `!key` or `!keys` in party, raid, instance, or guild chat to share your clickable Mythic+ keystone link.

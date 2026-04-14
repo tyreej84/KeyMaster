@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Renamed addon branding from **KeyStone Master** to **KeyStoneMastery**.
 - Updated chat reply prefix to `KeyStoneMastery:`.
+- Prepared metadata for upcoming Retail `12.0.5` by setting the addon interface to `120005`.
+- Updated project docs to call out Retail `12.0.5` forward compatibility.
 - Expanded `/ksm` dashboard as a full multi-tab Mythic+ panel (`Main`, `Party`, `Guild`).
 - Added Guild tab controls for pagination and `Hide Offline` filtering.
 - Guild request button now triggers active guild key pulls across enabled sources.
@@ -23,6 +25,9 @@ All notable changes to this project will be documented in this file.
 - Reduced risk of Lua chunk-local overflow in the main file by moving large static tables out of `KeyMaster.lua`.
 - Added passive guild key cache ingestion from observed keystone chat links and external key-sharing payloads.
 - Restricted `!keys` handling to KeyMaster sync behavior while leaving active external pulls to the Guild request path.
+- Strengthened guild sync payload parsing and sanitization for malformed addon messages.
+- Added AstralKeys `sync*` batch payload parsing (in addition to `updateV*`) so guild key snapshots populate reliably.
+- Expanded external key-ingestion channels for AstralKeys/OpenRaid messages beyond guild-only flows to improve party/guild coverage.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip`.

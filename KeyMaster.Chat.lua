@@ -84,9 +84,21 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
         return
     end
 
-    Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, message, sender)
+    local normalizedMessage = message
+    if type(normalizedMessage) ~= "string" then
+        local ok, converted = pcall(function(rawMessage)
+            return string.format("%s", rawMessage)
+        end, normalizedMessage)
+        if ok and type(converted) == "string" then
+            normalizedMessage = converted
+        else
+            return
+        end
+    end
 
-    local command = Chat.ExtractCommandWithFallback(ctx, message)
+    Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, normalizedMessage, sender)
+
+    local command = Chat.ExtractCommandWithFallback(ctx, normalizedMessage)
     if not command then
         ctx.RefreshKSMWindowIfVisible()
         return

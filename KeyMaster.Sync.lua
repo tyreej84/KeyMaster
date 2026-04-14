@@ -9,6 +9,74 @@ ns.Sync = Sync
 
 local lastGuildSyncRequestAt = 0
 
+local function ClampNumber(value, minValue, maxValue, defaultValue)
+    local numberValue = tonumber(value)
+    if type(numberValue) ~= "number" then
+        return defaultValue
+    end
+
+    numberValue = math.floor(numberValue + 0.5)
+    if numberValue < minValue or numberValue > maxValue then
+        return defaultValue
+    end
+
+    return numberValue
+end
+
+local function NormalizeClassFile(ctx, classFile)
+    if type(classFile) ~= "string" then
+        return nil
+    end
+
+    local normalized = strupper(classFile)
+    if normalized:match("^[A-Z]+$") ~= normalized then
+        return nil
+    end
+
+    if RAID_CLASS_COLORS and RAID_CLASS_COLORS[normalized] then
+        return normalized
+    end
+
+    for _, knownClassFile in pairs(ctx.CLASS_ID_TO_FILE or {}) do
+        if knownClassFile == normalized then
+            return normalized
+        end
+    end
+
+    return nil
+end
+
+local function ParseGuildSyncPayload(ctx, message)
+    if type(message) ~= "string" or message == "" then
+        return nil
+    end
+
+    local version, classFile, mapIDText, keyLevelText, ratingText = strsplit("\t", message)
+    if version == ctx.KSM_GUILD_SYNC_VERSION then
+        return {
+            class = NormalizeClassFile(ctx, classFile),
+            mapID = ClampNumber(mapIDText, 0, 20000, 0),
+            keyLevel = ClampNumber(keyLevelText, 0, 50, 0),
+            rating = ClampNumber(ratingText, 0, 20000, 0),
+            source = "keymaster",
+        }
+    end
+
+    -- Compatibility parser for Name:MapID:Level payloads.
+    local _, mapIDColon, keyLevelColon = strsplit(":", message)
+    local parsedMapID = ClampNumber(mapIDColon, 0, 20000, nil)
+    local parsedKeyLevel = ClampNumber(keyLevelColon, 0, 50, nil)
+    if parsedMapID and parsedKeyLevel then
+        return {
+            mapID = parsedMapID,
+            keyLevel = parsedKeyLevel,
+            source = "keymaster",
+        }
+    end
+
+    return nil
+end
+
 local function GetLibDeflateInstance(ctx)
     if not LibStub then
         return nil
@@ -86,7 +154,7 @@ local function HandleKeyMasterAddonMessage(ctx, message, sender)
         return
     end
 
-    if message == ctx.KSM_GUILD_SYNC_REQUEST then
+    if message == ctx.KSM_GUILD_SYNC_REQUEST or message == "REQUEST_KEYS" or message == "req" then
         local playerName = ctx.GetNormalizedPlayerName(UnitName("player"))
         local senderName = ctx.GetNormalizedPlayerName(sender)
         if senderName and playerName and senderName ~= playerName then
@@ -95,18 +163,12 @@ local function HandleKeyMasterAddonMessage(ctx, message, sender)
         return
     end
 
-    local version, classFile, mapIDText, keyLevelText, ratingText = strsplit("\t", message)
-    if version ~= ctx.KSM_GUILD_SYNC_VERSION then
+    local payload = ParseGuildSyncPayload(ctx, message)
+    if not payload then
         return
     end
 
-    ctx.SaveGuildMemberData(sender, {
-        class = classFile,
-        mapID = tonumber(mapIDText) or 0,
-        keyLevel = tonumber(keyLevelText) or 0,
-        rating = tonumber(ratingText) or 0,
-        source = "keymaster",
-    })
+    ctx.SaveGuildMemberData(sender, payload)
 end
 
 local function HandleAstralKeysAddonMessage(ctx, message)
@@ -114,23 +176,40 @@ local function HandleAstralKeysAddonMessage(ctx, message)
         return
     end
 
-    local payload = message:match("^updateV%d+%s+(.+)$")
-    if not payload then
+    local function SaveAstralRecord(unit, classFile, dungeonID, keyLevel, mplusScore)
+        if type(unit) ~= "string" or unit == "" then
+            return
+        end
+
+        ctx.SaveGuildMemberData(unit, {
+            class = NormalizeClassFile(ctx, classFile),
+            mapID = ClampNumber(dungeonID, 0, 20000, 0),
+            keyLevel = ClampNumber(keyLevel, 0, 50, 0),
+            rating = ClampNumber(mplusScore, 0, 20000, 0),
+            source = "astralkeys",
+        })
+    end
+
+    local updatePayload = message:match("^updateV%d+%s+(.+)$")
+    if updatePayload then
+        local unit, classFile, dungeonID, keyLevel, _, _, mplusScore = strsplit(":", updatePayload)
+        SaveAstralRecord(unit, classFile, dungeonID, keyLevel, mplusScore)
         return
     end
 
-    local unit, classFile, dungeonID, keyLevel, _, _, mplusScore = strsplit(":", payload)
-    if not unit or not classFile then
+    local syncPayload = message:match("^sync%d+%s+(.+)$")
+    if not syncPayload then
         return
     end
 
-    ctx.SaveGuildMemberData(unit, {
-        class = classFile,
-        mapID = tonumber(dungeonID) or 0,
-        keyLevel = tonumber(keyLevel) or 0,
-        rating = tonumber(mplusScore) or 0,
-        source = "astralkeys",
-    })
+    if syncPayload:sub(-1) ~= "_" then
+        syncPayload = syncPayload .. "_"
+    end
+
+    for entry in syncPayload:gmatch("([^_]+)_") do
+        local unit, classFile, dungeonID, keyLevel, _, _, _, mplusScore = strsplit(":", entry)
+        SaveAstralRecord(unit, classFile, dungeonID, keyLevel, mplusScore)
+    end
 end
 
 local function HandleDetailsOpenRaidAddonMessage(ctx, message, sender)
@@ -174,23 +253,26 @@ local function HandleDetailsOpenRaidAddonMessage(ctx, message, sender)
 end
 
 function Sync.HandleAddonMessage(ctx, prefix, message, channel, sender)
-    if channel ~= "GUILD" or not sender then
+    if type(channel) ~= "string" or not sender then
         return
     end
 
-    if prefix == ctx.KSM_ADDON_PREFIX then
+    local isGuildChannel = channel == "GUILD"
+    local isGroupChannel = channel == "PARTY" or channel == "RAID" or channel == "INSTANCE_CHAT"
+
+    if prefix == ctx.KSM_ADDON_PREFIX and isGuildChannel then
         HandleKeyMasterAddonMessage(ctx, message, sender)
         ctx.RefreshKSMWindowIfVisible()
         return
     end
 
-    if prefix == ctx.ASTRAL_KEYS_PREFIX then
+    if prefix == ctx.ASTRAL_KEYS_PREFIX and (isGuildChannel or isGroupChannel) then
         HandleAstralKeysAddonMessage(ctx, message)
         ctx.RefreshKSMWindowIfVisible()
         return
     end
 
-    if prefix == ctx.DETAILS_OPENRAID_PREFIX then
+    if prefix == ctx.DETAILS_OPENRAID_PREFIX and (isGuildChannel or isGroupChannel) then
         HandleDetailsOpenRaidAddonMessage(ctx, message, sender)
         ctx.RefreshKSMWindowIfVisible()
     end
