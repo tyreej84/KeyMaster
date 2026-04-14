@@ -2661,6 +2661,28 @@ local function IsPortalSpellKnown(spellID)
     return false
 end
 
+local function GetPortalSecureSpellToken(spellID)
+    if type(spellID) ~= "number" or spellID <= 0 then
+        return nil
+    end
+
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, name = pcall(C_Spell.GetSpellName, spellID)
+        if ok and type(name) == "string" and name ~= "" then
+            return name
+        end
+    end
+
+    if GetSpellInfo then
+        local name = GetSpellInfo(spellID)
+        if type(name) == "string" and name ~= "" then
+            return name
+        end
+    end
+
+    return string.format("spell:%d", spellID)
+end
+
 local function TryCastPortalSpell(spellID)
     -- Deprecated on purpose: portal casts are bound through SecureActionButtonTemplate.
     -- Keeping this function as a non-casting guard avoids accidental protected calls.
@@ -2685,11 +2707,16 @@ local function ConfigurePortalActionButton(button, spellID)
     end
 
     if known then
+        local secureSpell = GetPortalSecureSpellToken(spellID)
         button:SetAttribute("type", "spell")
-        button:SetAttribute("spell", spellID)
+        button:SetAttribute("spell", secureSpell)
+        button:SetAttribute("type1", "spell")
+        button:SetAttribute("spell1", secureSpell)
     else
         button:SetAttribute("type", nil)
         button:SetAttribute("spell", nil)
+        button:SetAttribute("type1", nil)
+        button:SetAttribute("spell1", nil)
     end
 
     return known
@@ -3243,6 +3270,7 @@ local function EnsureKSMGuildRow(index)
     local teleportButton = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     teleportButton:SetSize(78, 18)
     teleportButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    teleportButton:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
 
     local bg = teleportButton:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(teleportButton)
@@ -3332,6 +3360,7 @@ local function EnsureKSMPartyRow(index)
     local keyTile = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     keyTile:SetSize(46, 46)
     keyTile:SetPoint("TOPLEFT", row, "TOPLEFT", 336, -8)
+    keyTile:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
 
     local tileBG = keyTile:CreateTexture(nil, "BACKGROUND")
     tileBG:SetAllPoints(keyTile)

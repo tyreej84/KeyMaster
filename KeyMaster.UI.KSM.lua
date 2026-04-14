@@ -400,6 +400,7 @@ function KSM.RefreshMainTab(ctx)
         if not button then
             button = CreateFrame("Button", nil, seasonPanel, "SecureActionButtonTemplate")
             button:SetSize(tileWidth, tileHeight)
+            button:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
 
             local icon = button:CreateTexture(nil, "ARTWORK")
             icon:SetAllPoints(button)
