@@ -23,24 +23,36 @@ local function PrintStartupMessage(message)
     end
 end
 
-SLASH_KEYSTONEMASTERYDASH1 = "/ksm"
-SlashCmdList.KEYSTONEMASTERYDASH = function(message)
-    if type(HandleKSMCommand) == "function" then
-        HandleKSMCommand(message)
-        return
+local function RegisterSlashCommands()
+    -- Register both legacy and current slash IDs so command routing survives collisions/renames.
+    SLASH_KEYSTONEMASTERYDASH1 = "/ksm"
+    SlashCmdList.KEYSTONEMASTERYDASH = function(message)
+        if type(HandleKSMCommand) == "function" then
+            HandleKSMCommand(message)
+            return
+        end
+        PrintStartupMessage("/ksm is not ready yet. Reload UI and check Lua errors if this persists.")
     end
-    PrintStartupMessage("/ksm is not ready yet. Reload UI and check Lua errors if this persists.")
+
+    SLASH_KEYSTONEMASTER1 = "/ksm"
+    SlashCmdList.KEYSTONEMASTER = SlashCmdList.KEYSTONEMASTERYDASH
+
+    SLASH_KEYSTONEMASTERY1 = "/keymaster"
+    SLASH_KEYSTONEMASTERY2 = "/km"
+    SlashCmdList.KEYSTONEMASTERY = function(message)
+        if type(HandleKMCommand) == "function" then
+            HandleKMCommand(message)
+            return
+        end
+        PrintStartupMessage("/km is not ready yet. Reload UI and check Lua errors if this persists.")
+    end
+
+    SLASH_KEYMASTER1 = "/keymaster"
+    SLASH_KEYMASTER2 = "/km"
+    SlashCmdList.KEYMASTER = SlashCmdList.KEYSTONEMASTERY
 end
 
-SLASH_KEYSTONEMASTERY1 = "/keymaster"
-SLASH_KEYSTONEMASTERY2 = "/km"
-SlashCmdList.KEYSTONEMASTERY = function(message)
-    if type(HandleKMCommand) == "function" then
-        HandleKMCommand(message)
-        return
-    end
-    PrintStartupMessage("/km is not ready yet. Reload UI and check Lua errors if this persists.")
-end
+RegisterSlashCommands()
 
 local frame = CreateFrame("Frame")
 C_Timer.After(0, function()
@@ -4086,6 +4098,7 @@ function PerformLoginInitialization()
     end
 
     ui.loginInitialized = true
+    RegisterSlashCommands()
     local db = InitializeDatabase()
     ui.ksmHideOffline = db.ui.hideOfflineGuild == true
     CreateMythicUI()
