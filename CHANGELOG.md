@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 - Removed legacy direct-cast behavior from the old portal helper so stale call paths cannot invoke protected cast APIs.
 - Fixed portal button click execution by registering secure portal buttons for hardware clicks and binding spell cast tokens compatible with secure action attributes.
 - Hardened portal spell API compatibility checks to avoid indexing non-table globals on clients where `C_Spell`/`C_SpellBook` differ, preventing addon load/runtime breaks.
+- Hardened `/km` and `/ksm` slash registration with unique command IDs and early command binding to avoid addon command collisions and preserve command availability during partial initialization.
 - Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
 - Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
 

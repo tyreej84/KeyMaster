@@ -13,6 +13,35 @@ local unpack = unpack or table.unpack
 local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 
+local HandleKSMCommand
+local HandleKMCommand
+
+local function PrintStartupMessage(message)
+    local text = tostring(message or "")
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff98KeyStoneMastery:|r " .. text)
+    end
+end
+
+SLASH_KEYSTONEMASTERYDASH1 = "/ksm"
+SlashCmdList.KEYSTONEMASTERYDASH = function(message)
+    if type(HandleKSMCommand) == "function" then
+        HandleKSMCommand(message)
+        return
+    end
+    PrintStartupMessage("/ksm is not ready yet. Reload UI and check Lua errors if this persists.")
+end
+
+SLASH_KEYSTONEMASTERY1 = "/keymaster"
+SLASH_KEYSTONEMASTERY2 = "/km"
+SlashCmdList.KEYSTONEMASTERY = function(message)
+    if type(HandleKMCommand) == "function" then
+        HandleKMCommand(message)
+        return
+    end
+    PrintStartupMessage("/km is not ready yet. Reload UI and check Lua errors if this persists.")
+end
+
 local frame = CreateFrame("Frame")
 C_Timer.After(0, function()
     frame:RegisterEvent("ADDON_LOADED")
@@ -3888,8 +3917,7 @@ function CreateKSMWindow()
     SetKSMActiveTab("main")
 end
 
-SLASH_KEYSTONEMASTER1 = "/ksm"
-SlashCmdList.KEYSTONEMASTER = function(message)
+HandleKSMCommand = function(message)
     CreateKSMWindow()
     local command = strtrim(strlower(message or ""))
 
@@ -3931,9 +3959,7 @@ SlashCmdList.KEYSTONEMASTER = function(message)
     PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, refresh")
 end
 
-SLASH_KEYMASTER1 = "/keymaster"
-SLASH_KEYMASTER2 = "/km"
-SlashCmdList.KEYMASTER = function(message)
+HandleKMCommand = function(message)
     InitializeDatabase()
     CreateMythicUI()
     RegisterSettingsPanel()
