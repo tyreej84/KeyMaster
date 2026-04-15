@@ -1,4 +1,6 @@
 local addonName = ...
+local KMNS = _G.KeyMasterNS or {}
+
 
 local floor = math.floor
 local max = math.max
@@ -149,20 +151,6 @@ local CHAT_EVENT_TO_CHANNEL = _G.KeyMasterNS and _G.KeyMasterNS.CHAT_EVENT_TO_CH
 
 local MAX_DEFERRED_CHAT_MESSAGES = _G.KeyMasterNS and _G.KeyMasterNS.MAX_DEFERRED_CHAT_MESSAGES or 10
 
-local NormalizeDungeonName = _G.KeyMasterNS and _G.KeyMasterNS.NormalizeDungeonName
-local ResolveMapIDFromDungeonName = _G.KeyMasterNS and _G.KeyMasterNS.ResolveMapIDFromDungeonName
-local ParseKeystoneFromMessage = _G.KeyMasterNS and _G.KeyMasterNS.ParseKeystoneFromMessage
-local FormatSeconds = _G.KeyMasterNS and _G.KeyMasterNS.FormatSeconds
-local FormatSignedSeconds = _G.KeyMasterNS and _G.KeyMasterNS.FormatSignedSeconds
-local ParsePercentValue = _G.KeyMasterNS and _G.KeyMasterNS.ParsePercentValue
-local BuildKeystoneSnapshotKey = _G.KeyMasterNS and _G.KeyMasterNS.BuildKeystoneSnapshotKey
-local ExtractRequestCommand = _G.KeyMasterNS and _G.KeyMasterNS.ExtractRequestCommand
-local CanReadChatPayload = _G.KeyMasterNS and _G.KeyMasterNS.CanReadChatPayload
-local IsPlayerInGuildSafe = _G.KeyMasterNS and _G.KeyMasterNS.IsPlayerInGuildSafe
-local RequestGuildRosterSafe = _G.KeyMasterNS and _G.KeyMasterNS.RequestGuildRosterSafe
-local GetNumGuildMembersSafe = _G.KeyMasterNS and _G.KeyMasterNS.GetNumGuildMembersSafe
-local GetGuildMemberLastOnlineDays = _G.KeyMasterNS and _G.KeyMasterNS.GetGuildMemberLastOnlineDays
-local IsGuildMemberRecent = _G.KeyMasterNS and _G.KeyMasterNS.IsGuildMemberRecent
 
 local function IsCombatLockdownActive()
     return InCombatLockdown and InCombatLockdown() == true
@@ -894,7 +882,7 @@ local function GetOwnedKeystoneSnapshot()
 
     if (type(mapID) ~= "number" or mapID <= 0) or (type(keyLevel) ~= "number" or keyLevel <= 0) then
         local keyLink = GetOwnedKeystoneLink()
-        local parsedMapID, parsedLevel = ParseKeystoneFromMessage(keyLink)
+        local parsedMapID, parsedLevel = KMNS.ParseKeystoneFromMessage(keyLink)
         mapID = (type(mapID) == "number" and mapID > 0) and mapID or parsedMapID
         keyLevel = (type(keyLevel) == "number" and keyLevel > 0) and keyLevel or parsedLevel
     end
@@ -941,7 +929,7 @@ end
 
 local function ObserveOwnedKeystone(allowAnnounce)
     local mapID, keyLevel = GetOwnedKeystoneSnapshot()
-    local currentSnapshotKey = BuildKeystoneSnapshotKey(mapID, keyLevel)
+    local currentSnapshotKey = KMNS.BuildKeystoneSnapshotKey(mapID, keyLevel)
 
     if not ui.observedKeystoneSnapshot then
         ui.observedKeystoneSnapshot = currentSnapshotKey
@@ -983,7 +971,7 @@ local function BuildOwnGuildSyncMessage()
 end
 
 local function BroadcastOwnGuildSnapshot()
-    if not (IsPlayerInGuildSafe() and C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+    if not (KMNS.IsPlayerInGuildSafe() and C_ChatInfo and C_ChatInfo.SendAddonMessage) then
         return
     end
 
@@ -1011,7 +999,7 @@ local function BuildSyncContext()
         DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX = DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX,
         DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX,
         CLASS_ID_TO_FILE = CLASS_ID_TO_FILE,
-        IsPlayerInGuildSafe = IsPlayerInGuildSafe,
+        IsPlayerInGuildSafe = KMNS.IsPlayerInGuildSafe,
         GetNormalizedPlayerName = GetNormalizedPlayerName,
         BroadcastOwnGuildSnapshot = BroadcastOwnGuildSnapshot,
         SaveGuildMemberData = SaveGuildMemberData,
@@ -1390,10 +1378,10 @@ local function BuildChatContext()
         BuildKeystoneReply = BuildKeystoneReply,
         BuildScoreReply = BuildScoreReply,
         BuildBestReply = BuildBestReply,
-        ParseKeystoneFromMessage = ParseKeystoneFromMessage,
+        ParseKeystoneFromMessage = KMNS.ParseKeystoneFromMessage,
         SaveGuildMemberData = SaveGuildMemberData,
-        ExtractRequestCommand = ExtractRequestCommand,
-        CanReadChatPayload = CanReadChatPayload,
+        ExtractRequestCommand = KMNS.ExtractRequestCommand,
+        CanReadChatPayload = KMNS.CanReadChatPayload,
         RequestGuildSnapshots = RequestGuildSnapshots,
         SendOrQueueChatMessage = SendOrQueueChatMessage,
         RefreshKSMWindowIfVisible = RefreshKSMWindowIfVisible,
@@ -1717,7 +1705,7 @@ local function ResolveEnemyForcesPercent(criteriaInfo, mapID, mapName)
     local quantityValue = type(criteriaInfo.quantity) == "number" and criteriaInfo.quantity or nil
     local useDirectPercent = criteriaInfo.isWeightedProgress == true
 
-    local quantityStringPercent = ParsePercentValue(criteriaInfo.quantityString)
+    local quantityStringPercent = KMNS.ParsePercentValue(criteriaInfo.quantityString)
     if criteriaInfo.isWeightedProgress and type(quantityStringPercent) == "number" then
         quantityValue = quantityStringPercent
         useDirectPercent = false
@@ -1763,7 +1751,7 @@ local function GetCriteriaState(mapID, mapName)
                 local percent = ResolveEnemyForcesPercent(info, mapID, mapName)
 
                 local confidence = 0
-                if ParsePercentValue(info.quantityString) ~= nil then
+                if KMNS.ParsePercentValue(info.quantityString) ~= nil then
                     confidence = confidence + 3
                 end
                 if info.isWeightedProgress then
@@ -1803,7 +1791,7 @@ local function CalculateEnemyForcesPercent(enemyInfo)
         return nil
     end
 
-    local percent = ParsePercentValue(enemyInfo.quantityString)
+    local percent = KMNS.ParsePercentValue(enemyInfo.quantityString)
     if type(percent) == "number" then
         return min(100, max(0, percent))
     end
@@ -2169,9 +2157,9 @@ local function RenderMythicUI()
             end
 
             if state.maxTimeSeconds then
-                ui.timerLine:SetText(string.format("%s (%s / %s)", FormatSeconds(state.timeLeftSeconds), FormatSeconds(state.elapsedSeconds), FormatSeconds(state.maxTimeSeconds)))
+                ui.timerLine:SetText(string.format("%s (%s / %s)", KMNS.FormatSeconds(state.timeLeftSeconds), KMNS.FormatSeconds(state.elapsedSeconds), KMNS.FormatSeconds(state.maxTimeSeconds)))
             else
-                ui.timerLine:SetText(FormatSeconds(state.elapsedSeconds))
+                ui.timerLine:SetText(KMNS.FormatSeconds(state.elapsedSeconds))
             end
             ui.timerLine:SetTextColor(1, 1, 1, 1)
             ui.timerLine:SetWidth(width)
@@ -2180,7 +2168,7 @@ local function RenderMythicUI()
             y = y - ui.timerLine:GetStringHeight() - 4
 
             if state.twoChestLimit then
-                ui.twoChestLine:SetText(string.format("+2 (%s): %s", FormatSeconds(state.twoChestLimit), FormatSeconds(max(0, state.twoChestLimit - state.elapsedSeconds))))
+                ui.twoChestLine:SetText(string.format("+2 (%s): %s", KMNS.FormatSeconds(state.twoChestLimit), KMNS.FormatSeconds(max(0, state.twoChestLimit - state.elapsedSeconds))))
             else
                 ui.twoChestLine:SetText("+2: --:--")
             end
@@ -2190,7 +2178,7 @@ local function RenderMythicUI()
             y = y - ui.twoChestLine:GetStringHeight() - 4
 
             if state.threeChestLimit then
-                ui.threeChestLine:SetText(string.format("+3 (%s): %s", FormatSeconds(state.threeChestLimit), FormatSeconds(max(0, state.threeChestLimit - state.elapsedSeconds))))
+                ui.threeChestLine:SetText(string.format("+3 (%s): %s", KMNS.FormatSeconds(state.threeChestLimit), KMNS.FormatSeconds(max(0, state.threeChestLimit - state.elapsedSeconds))))
             else
                 ui.threeChestLine:SetText("+3: --:--")
             end
@@ -2246,7 +2234,7 @@ local function RenderMythicUI()
             end
 
             if state.deathCount and state.deathCount > 0 then
-                ui.deathLine:SetText(string.format("Deaths: %d (-%s)", state.deathCount, FormatSeconds(state.deathPenalty or 0)))
+                ui.deathLine:SetText(string.format("Deaths: %d (-%s)", state.deathCount, KMNS.FormatSeconds(state.deathPenalty or 0)))
                 ui.deathLine:SetWidth(width)
                 ui.deathLine:ClearAllPoints()
                 ui.deathLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
@@ -2281,7 +2269,7 @@ local function RenderMythicUI()
             y = y - ui.headerLine:GetStringHeight() - 4
 
             local elapsedSeconds = GetWorldElapsedSeconds() or 0
-            ui.timerLine:SetText(string.format("%s (waiting for challenge data)", FormatSeconds(elapsedSeconds)))
+            ui.timerLine:SetText(string.format("%s (waiting for challenge data)", KMNS.FormatSeconds(elapsedSeconds)))
             ui.timerLine:SetTextColor(1, 1, 1, 1)
             ui.timerLine:SetWidth(width)
             ui.timerLine:ClearAllPoints()
@@ -2330,14 +2318,14 @@ local function RenderMythicUI()
             end
 
             if completed.maxTimeSeconds then
-                ui.timerLine:SetText(string.format("Completed: %s (%s left)", FormatSeconds(completed.elapsedSeconds or 0), FormatSignedSeconds(completed.timeLeftSeconds or 0)))
+                ui.timerLine:SetText(string.format("Completed: %s (%s left)", KMNS.FormatSeconds(completed.elapsedSeconds or 0), KMNS.FormatSignedSeconds(completed.timeLeftSeconds or 0)))
                 if type(completed.timeLeftSeconds) == "number" and completed.timeLeftSeconds < 0 then
                     ui.timerLine:SetTextColor(1, 0.25, 0.25, 1)
                 else
                     ui.timerLine:SetTextColor(1, 1, 1, 1)
                 end
             else
-                ui.timerLine:SetText(string.format("Completed: %s", FormatSeconds(completed.elapsedSeconds or 0)))
+                ui.timerLine:SetText(string.format("Completed: %s", KMNS.FormatSeconds(completed.elapsedSeconds or 0)))
                 ui.timerLine:SetTextColor(1, 1, 1, 1)
             end
             ui.timerLine:SetWidth(width)
@@ -2353,7 +2341,7 @@ local function RenderMythicUI()
             y = y - ui.twoChestLine:GetStringHeight() - 4
 
             if completed.maxTimeSeconds then
-                ui.threeChestLine:SetText(string.format("Timer: %s / %s", FormatSeconds(completed.elapsedSeconds or 0), FormatSeconds(completed.maxTimeSeconds)))
+                ui.threeChestLine:SetText(string.format("Timer: %s / %s", KMNS.FormatSeconds(completed.elapsedSeconds or 0), KMNS.FormatSeconds(completed.maxTimeSeconds)))
             else
                 ui.threeChestLine:SetText("Timer: --:--")
             end
@@ -2364,7 +2352,7 @@ local function RenderMythicUI()
             y = y - ui.threeChestLine:GetStringHeight() - 6
 
             if completed.deathCount and completed.deathCount > 0 then
-                ui.deathLine:SetText(string.format("Deaths: %d (-%s)", completed.deathCount, FormatSeconds(completed.deathPenalty or 0)))
+                ui.deathLine:SetText(string.format("Deaths: %d (-%s)", completed.deathCount, KMNS.FormatSeconds(completed.deathPenalty or 0)))
                 ui.deathLine:SetWidth(width)
                 ui.deathLine:ClearAllPoints()
                 ui.deathLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
@@ -2601,7 +2589,7 @@ local function PrintEnemyForcesDebugSummary()
         local info = NormalizeCriteriaInfo(index)
         if info and IsEnemyForcesName(info.name) then
             found = true
-            local parsedPercent = ParsePercentValue(info.quantityString)
+            local parsedPercent = KMNS.ParsePercentValue(info.quantityString)
             local inferredTotal
             if type(info.quantity) == "number" and info.quantity > 0 and type(parsedPercent) == "number" and parsedPercent > 0 then
                 inferredTotal = (info.quantity * 100) / parsedPercent
@@ -3457,13 +3445,13 @@ local function BuildKSMContext()
         GetPortalSpellIDForMap = GetPortalSpellIDForMap,
         EnsureKSMDataLine = EnsureKSMDataLine,
         EnsureKSMPartyRow = EnsureKSMPartyRow,
-        IsPlayerInGuildSafe = IsPlayerInGuildSafe,
-        RequestGuildRosterSafe = RequestGuildRosterSafe,
+        IsPlayerInGuildSafe = KMNS.IsPlayerInGuildSafe,
+        RequestGuildRosterSafe = KMNS.RequestGuildRosterSafe,
         RequestGuildKeysFromAllSources = RequestGuildKeysFromAllSources,
         GetNormalizedPlayerName = GetNormalizedPlayerName,
-        GetNumGuildMembersSafe = GetNumGuildMembersSafe,
+        GetNumGuildMembersSafe = KMNS.GetNumGuildMembersSafe,
         TryGetMythicScoreForIdentifier = TryGetMythicScoreForIdentifier,
-        IsGuildMemberRecent = IsGuildMemberRecent,
+        IsGuildMemberRecent = KMNS.IsGuildMemberRecent,
         GetGuildMemberStore = GetGuildMemberStore,
         EnsureKSMGuildRow = EnsureKSMGuildRow,
     }
@@ -4108,7 +4096,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "GUILD_ROSTER_UPDATE" then
-        if IsPlayerInGuildSafe() then
+        if KMNS.IsPlayerInGuildSafe() then
             RequestGuildKeysFromAllSources(false)
         end
         RefreshKSMWindowIfVisible()
