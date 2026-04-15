@@ -24,6 +24,10 @@ local function PrintStartupMessage(message)
 end
 
 local function RegisterSlashCommands()
+    if type(SlashCmdList) ~= "table" then
+        return false
+    end
+
     -- Register both legacy and current slash IDs so command routing survives collisions/renames.
     SLASH_KEYSTONEMASTERYDASH1 = "/ksm"
     SlashCmdList.KEYSTONEMASTERYDASH = function(message)
@@ -50,14 +54,20 @@ local function RegisterSlashCommands()
     SLASH_KEYMASTER1 = "/keymaster"
     SLASH_KEYMASTER2 = "/km"
     SlashCmdList.KEYMASTER = SlashCmdList.KEYSTONEMASTERY
+
+    return true
 end
 
 RegisterSlashCommands()
 
 local frame = CreateFrame("Frame")
-C_Timer.After(0, function()
+if C_Timer and type(C_Timer.After) == "function" then
+    C_Timer.After(0, function()
+        frame:RegisterEvent("ADDON_LOADED")
+    end)
+else
     frame:RegisterEvent("ADDON_LOADED")
-end)
+end
 
 local RUNTIME_EVENTS = {
     "CHAT_MSG_ADDON",
