@@ -13,53 +13,6 @@ local unpack = unpack or table.unpack
 local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 
-local HandleKSMCommand
-local HandleKMCommand
-
-local function PrintStartupMessage(message)
-    local text = tostring(message or "")
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff98KeyStoneMastery:|r " .. text)
-    end
-end
-
-local function RegisterSlashCommands()
-    if type(SlashCmdList) ~= "table" then
-        return false
-    end
-
-    -- Register both legacy and current slash IDs so command routing survives collisions/renames.
-    SLASH_KEYSTONEMASTERYDASH1 = "/ksm"
-    SlashCmdList.KEYSTONEMASTERYDASH = function(message)
-        if type(HandleKSMCommand) == "function" then
-            HandleKSMCommand(message)
-            return
-        end
-        PrintStartupMessage("/ksm is not ready yet. Reload UI and check Lua errors if this persists.")
-    end
-
-    SLASH_KEYSTONEMASTER1 = "/ksm"
-    SlashCmdList.KEYSTONEMASTER = SlashCmdList.KEYSTONEMASTERYDASH
-
-    SLASH_KEYSTONEMASTERY1 = "/keymaster"
-    SLASH_KEYSTONEMASTERY2 = "/km"
-    SlashCmdList.KEYSTONEMASTERY = function(message)
-        if type(HandleKMCommand) == "function" then
-            HandleKMCommand(message)
-            return
-        end
-        PrintStartupMessage("/km is not ready yet. Reload UI and check Lua errors if this persists.")
-    end
-
-    SLASH_KEYMASTER1 = "/keymaster"
-    SLASH_KEYMASTER2 = "/km"
-    SlashCmdList.KEYMASTER = SlashCmdList.KEYSTONEMASTERY
-
-    return true
-end
-
-RegisterSlashCommands()
-
 local frame = CreateFrame("Frame")
 if C_Timer and type(C_Timer.After) == "function" then
     C_Timer.After(0, function()
@@ -3939,7 +3892,8 @@ function CreateKSMWindow()
     SetKSMActiveTab("main")
 end
 
-HandleKSMCommand = function(message)
+SLASH_KEYSTONEMASTER1 = "/ksm"
+SlashCmdList.KEYSTONEMASTER = function(message)
     CreateKSMWindow()
     local command = strtrim(strlower(message or ""))
 
@@ -3981,7 +3935,9 @@ HandleKSMCommand = function(message)
     PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, refresh")
 end
 
-HandleKMCommand = function(message)
+SLASH_KEYMASTER1 = "/keymaster"
+SLASH_KEYMASTER2 = "/km"
+SlashCmdList.KEYMASTER = function(message)
     InitializeDatabase()
     CreateMythicUI()
     RegisterSettingsPanel()
@@ -4108,7 +4064,6 @@ function PerformLoginInitialization()
     end
 
     ui.loginInitialized = true
-    RegisterSlashCommands()
     local db = InitializeDatabase()
     ui.ksmHideOffline = db.ui.hideOfflineGuild == true
     CreateMythicUI()

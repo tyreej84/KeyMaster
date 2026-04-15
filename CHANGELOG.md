@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - Added dual slash alias registration (`KEYMASTER`/`KEYSTONEMASTER` plus `KEYSTONEMASTERY*`) and login-time rebind to keep `/km` and `/ksm` available even if another addon overwrites slash tables.
 - Added ultra-early fallback slash handlers in constants so `/km` and `/ksm` return a startup diagnostic if later files fail during addon initialization.
 - Hardened core startup against early-load globals by guarding slash registration when `SlashCmdList` is unavailable and falling back to direct `ADDON_LOADED` registration if `C_Timer.After` is unavailable.
+- Simplified `/km` and `/ksm` core slash wiring back to direct handlers in `KeyMaster.lua` to reduce chunk complexity and avoid early core aborts while retaining constants-level fallback diagnostics.
 - Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
 - Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
 
