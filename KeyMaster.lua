@@ -2689,6 +2689,7 @@ local function ConfigurePortalActionButton(button, spellID)
 
     button.spellID = spellID
     local known = IsPortalSpellKnown(spellID)
+    local hasSpell = type(spellID) == "number" and spellID > 0
 
     if not button.SetAttribute then
         return known
@@ -2698,8 +2699,8 @@ local function ConfigurePortalActionButton(button, spellID)
         return known
     end
 
-    if known then
-        local secureSpell = GetPortalSecureSpellToken(spellID)
+    if hasSpell then
+        local secureSpell = spellID
         button:SetAttribute("type", "spell")
         button:SetAttribute("spell", secureSpell)
         button:SetAttribute("type1", "spell")
