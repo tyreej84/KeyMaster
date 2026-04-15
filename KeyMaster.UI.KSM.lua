@@ -647,6 +647,15 @@ function KSM.RefreshGuildTab(ctx)
     local IsPortalSpellKnown = ctx.IsPortalSpellKnown
     local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
 
+    local function IsGuildOnlineValue(value)
+        if value == true then
+            return true
+        end
+
+        local numeric = tonumber(value)
+        return numeric == 1
+    end
+
     if ui.ksmGuildHideOfflineCheck then
         ui.ksmGuildHideOfflineCheck:SetChecked(ui.ksmHideOffline == true)
     end
@@ -694,11 +703,12 @@ function KSM.RefreshGuildTab(ctx)
                 name = type(fullName) == "string" and fullName ~= "" and fullName or nil
             end
             if name then
+                local onlineNow = IsGuildOnlineValue(online)
                 local cache = GetGuildMemberData(name) or {}
                 local isPlayer = name == playerName
                 local guid = select(17, GetGuildRosterInfo(index))
                 rosterByName[name] = {
-                    online = online and true or false,
+                    online = onlineNow,
                     classFile = classFile,
                     guid = guid,
                 }
@@ -717,7 +727,7 @@ function KSM.RefreshGuildTab(ctx)
                 local normalizedMapID = tonumber(mapID) or 0
                 local normalizedKeyLevel = tonumber(keyLevel) or 0
                 local normalizedRating = tonumber(rating) or 0
-                local isRecent = IsGuildMemberRecent(index, online and true or false, cache)
+                local isRecent = IsGuildMemberRecent(index, onlineNow, cache)
 
                 if isPlayer or isRecent then
                     local rowEntry = {
@@ -727,7 +737,7 @@ function KSM.RefreshGuildTab(ctx)
                         keyLevel = normalizedKeyLevel,
                         rating = normalizedRating,
                         spellID = GetPortalSpellIDForMap(normalizedMapID),
-                        online = isPlayer or (online and true or false),
+                        online = isPlayer or onlineNow,
                     }
                     table.insert(entries, rowEntry)
                     entryByName[rowEntry.name] = true

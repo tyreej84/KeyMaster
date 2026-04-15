@@ -47,6 +47,7 @@ All notable changes to this project will be documented in this file.
 - Simplified `/km` and `/ksm` core slash wiring back to direct handlers in `KeyMaster.lua` to reduce chunk complexity and avoid early core aborts while retaining constants-level fallback diagnostics.
 - Fixed core compile failure (`main function has more than 200 local variables`) by removing top-level utility alias locals in `KeyMaster.lua` and routing those helpers through a shared namespace reference.
 - Fixed `/ksm` teleport buttons (Main/Party/Guild) no-op behavior by binding secure spell actions for valid portal spell IDs regardless of known-check result; known-check now controls visuals/tooltips only.
+- Fixed `/ksm guild` `Hide Offline` filtering by normalizing Blizzard roster online flags (0/1/boolean) before row inclusion and filter checks.
 - Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
 - Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
 
