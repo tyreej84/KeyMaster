@@ -42,11 +42,12 @@ All notable changes to this project will be documented in this file.
 - Hardened portal spell API compatibility checks to avoid indexing non-table globals on clients where `C_Spell`/`C_SpellBook` differ, preventing addon load/runtime breaks.
 - Hardened `/km` and `/ksm` slash registration with unique command IDs and early command binding to avoid addon command collisions and preserve command availability during partial initialization.
 - Added dual slash alias registration (`KEYMASTER`/`KEYSTONEMASTER` plus `KEYSTONEMASTERY*`) and login-time rebind to keep `/km` and `/ksm` available even if another addon overwrites slash tables.
+- Added ultra-early fallback slash handlers in constants so `/km` and `/ksm` return a startup diagnostic if later files fail during addon initialization.
 - Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
 - Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
 
 ### Packaging
-- Built release archive at `Releases/1.7.0/KeyMaster.zip`.
+- Built release archive at `Releases/1.7.0/KeyMaster.zip` with a top-level `KeyMaster/` folder for direct AddOns extraction.
 
 ## [1.6.8] - 2026-04-13
 

@@ -98,3 +98,23 @@ ns.DEFAULT_DB = {
         members = {},
     },
 }
+
+-- Early fallback slash bindings: if later addon files error, users still get a KeyMaster response.
+local function KeyMasterEarlySlashFallback(command)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff98KeyStoneMastery:|r core did not fully initialize. Check Lua errors, then /reload.")
+    end
+end
+
+if type(SlashCmdList) == "table" then
+    if type(SlashCmdList.KEYMASTER) ~= "function" then
+        SLASH_KEYMASTER1 = "/keymaster"
+        SLASH_KEYMASTER2 = "/km"
+        SlashCmdList.KEYMASTER = KeyMasterEarlySlashFallback
+    end
+
+    if type(SlashCmdList.KEYSTONEMASTER) ~= "function" then
+        SLASH_KEYSTONEMASTER1 = "/ksm"
+        SlashCmdList.KEYSTONEMASTER = KeyMasterEarlySlashFallback
+    end
+end
