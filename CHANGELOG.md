@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 - Prepared Retail `12.0.5` readiness notes and validation checklist.
 - Updated project docs to call out Retail `12.0.5` forward compatibility.
 - Expanded `/ksm` dashboard as a full multi-tab Mythic+ panel (`Main`, `Party`, `Guild`).
+- Added a `/ksm` `Recents` tab for previously seen players with known key data.
+- Added TOC icon metadata so KeyStoneMastery shows an addon-list icon in-game.
 - Added Guild tab controls for pagination and `Hide Offline` filtering.
 - Guild request button now triggers active guild key pulls across enabled sources.
 - Kept `KeyMaster.lua` as the main runtime file and split shared constants/data into dedicated modules:
@@ -50,6 +52,8 @@ All notable changes to this project will be documented in this file.
 - Fixed `/ksm guild` `Hide Offline` filtering by normalizing Blizzard roster online flags (0/1/boolean) before row inclusion and filter checks.
 - Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
 - Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
+- Expanded KeyMaster sync request/broadcast channels to include active group contexts (`PARTY`/`RAID`/`INSTANCE_CHAT`) in addition to guild, improving raid pickup coverage.
+- Updated `/ksm guild` roster filtering to list only guild members with known keys, reducing noise from inactive/alts-without-key entries.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip` with a top-level `KeyMaster/` folder for direct AddOns extraction.

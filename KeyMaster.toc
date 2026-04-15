@@ -4,6 +4,7 @@
 ## Author: Karnytine-Stormrage (joe@tyreenet.com)
 ## Version: 1.7.0
 ## SavedVariables: KeyMasterDB
+## IconTexture: Interface\\AddOns\\KeyMaster\\Assets\\UI\\KeyStoneMastery_Icon
 
 KeyMaster.Constants.lua
 KeyMaster.Data.lua

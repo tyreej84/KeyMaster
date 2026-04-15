@@ -123,18 +123,27 @@ local ui = {
     ksmMainTab = nil,
     ksmPartyTab = nil,
     ksmGuildTab = nil,
+    ksmRecentsTab = nil,
     ksmMainContent = nil,
     ksmPartyContent = nil,
     ksmGuildContent = nil,
+    ksmRecentsContent = nil,
     ksmPartyLines = {},
     ksmPartyRows = {},
     ksmGuildLines = {},
     ksmGuildRows = {},
+    ksmRecentsLines = {},
+    ksmRecentsRows = {},
     ksmGuildPage = 1,
     ksmGuildTotalPages = 1,
     ksmGuildPrevButton = nil,
     ksmGuildNextButton = nil,
     ksmGuildPageText = nil,
+    ksmRecentsPage = 1,
+    ksmRecentsTotalPages = 1,
+    ksmRecentsPrevButton = nil,
+    ksmRecentsNextButton = nil,
+    ksmRecentsPageText = nil,
     ksmGuildHideOfflineCheck = nil,
     ksmHideOffline = false,
     ksmPortalButtons = {},
@@ -956,6 +965,35 @@ local function ObserveOwnedKeystone(allowAnnounce)
     BroadcastOwnGuildSnapshot()
 end
 
+local function BuildActiveSyncChannels()
+    local channels = {}
+    local seen = {}
+
+    local function AddChannel(channel)
+        if seen[channel] then
+            return
+        end
+
+        seen[channel] = true
+        table.insert(channels, channel)
+    end
+
+    if KMNS.IsPlayerInGuildSafe() then
+        AddChannel("GUILD")
+    end
+
+    local inInstanceGroup = IsInGroup and LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
+    if inInstanceGroup then
+        AddChannel("INSTANCE_CHAT")
+    elseif IsInRaid and IsInRaid() then
+        AddChannel("RAID")
+    elseif IsInGroup and IsInGroup() then
+        AddChannel("PARTY")
+    end
+
+    return channels
+end
+
 local function BuildOwnGuildSyncMessage()
     local mapID, keyLevel = GetOwnedKeystoneSnapshot()
     local score = GetMythicPlusScore() or 0
@@ -971,12 +1009,19 @@ local function BuildOwnGuildSyncMessage()
 end
 
 local function BroadcastOwnGuildSnapshot()
-    if not (KMNS.IsPlayerInGuildSafe() and C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+        return
+    end
+
+    local channels = BuildActiveSyncChannels()
+    if #channels == 0 then
         return
     end
 
     local payload = BuildOwnGuildSyncMessage()
-    pcall(C_ChatInfo.SendAddonMessage, KSM_ADDON_PREFIX, payload, "GUILD")
+    for _, channel in ipairs(channels) do
+        pcall(C_ChatInfo.SendAddonMessage, KSM_ADDON_PREFIX, payload, channel)
+    end
 
     SaveGuildMemberData(UnitName("player"), {
         class = GetPlayerClassFile("player"),
@@ -3306,6 +3351,90 @@ local function EnsureKSMGuildRow(index)
     return row
 end
 
+local function EnsureKSMRecentRow(index)
+    if ui.ksmRecentsRows[index] then
+        return ui.ksmRecentsRows[index]
+    end
+
+    local row = CreateFrame("Frame", nil, ui.ksmRecentsContent)
+    row:SetSize(570, 24)
+
+    local classIcon = row:CreateTexture(nil, "ARTWORK")
+    classIcon:SetSize(16, 16)
+    classIcon:SetPoint("LEFT", row, "LEFT", 4, 0)
+    classIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+    row.classIcon = classIcon
+
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameText:SetPoint("LEFT", classIcon, "RIGHT", 8, 0)
+    nameText:SetWidth(165)
+    nameText:SetJustifyH("LEFT")
+    row.nameText = nameText
+
+    local keyText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    keyText:SetPoint("LEFT", row, "LEFT", 198, 0)
+    keyText:SetWidth(34)
+    keyText:SetJustifyH("LEFT")
+    row.keyText = keyText
+
+    local dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    dungeonText:SetPoint("LEFT", row, "LEFT", 240, 0)
+    dungeonText:SetWidth(180)
+    dungeonText:SetJustifyH("LEFT")
+    row.dungeonText = dungeonText
+
+    local ratingText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    ratingText:SetPoint("LEFT", row, "LEFT", 430, 0)
+    ratingText:SetWidth(54)
+    ratingText:SetJustifyH("LEFT")
+    row.ratingText = ratingText
+
+    local teleportButton = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
+    teleportButton:SetSize(78, 18)
+    teleportButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    teleportButton:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+
+    local bg = teleportButton:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(teleportButton)
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.85)
+
+    local accent = teleportButton:CreateTexture(nil, "OVERLAY")
+    accent:SetPoint("TOPLEFT", teleportButton, "TOPLEFT", 0, 0)
+    accent:SetPoint("BOTTOMRIGHT", teleportButton, "BOTTOMRIGHT", 0, 0)
+    accent:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.18)
+
+    local label = teleportButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetAllPoints(teleportButton)
+    label:SetText("Teleport")
+    teleportButton.label = label
+
+    teleportButton:SetScript("OnClick", function(self)
+        if not self.spellID then
+            return
+        end
+
+        if not IsPortalSpellKnown(self.spellID) then
+            PrintLocal("You do not know this portal")
+            return
+        end
+    end)
+
+    teleportButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.spellID then
+            GameTooltip:SetSpellByID(self.spellID)
+        else
+            GameTooltip:AddLine("Portal unavailable", 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    teleportButton:SetScript("OnLeave", GameTooltip_Hide)
+    row.teleportButton = teleportButton
+
+    ui.ksmRecentsRows[index] = row
+    return row
+end
+
 local function EnsureKSMPartyRow(index)
     if ui.ksmPartyRows[index] then
         return ui.ksmPartyRows[index]
@@ -3455,6 +3584,7 @@ local function BuildKSMContext()
         IsGuildMemberRecent = KMNS.IsGuildMemberRecent,
         GetGuildMemberStore = GetGuildMemberStore,
         EnsureKSMGuildRow = EnsureKSMGuildRow,
+        EnsureKSMRecentRow = EnsureKSMRecentRow,
     }
 end
 
@@ -3482,6 +3612,12 @@ local function RefreshKSMGuildTab()
     end
 end
 
+local function RefreshKSMRecentsTab()
+    if KSMModule and KSMModule.RefreshRecentsTab then
+        KSMModule.RefreshRecentsTab(BuildKSMContext())
+    end
+end
+
 function RefreshKSMWindow()
     if not ui.ksmFrame then
         return
@@ -3490,6 +3626,7 @@ function RefreshKSMWindow()
     RefreshKSMMainTab()
     RefreshKSMPartyTab()
     RefreshKSMGuildTab()
+    RefreshKSMRecentsTab()
 end
 
 function RefreshKSMWindowIfVisible()
@@ -3549,7 +3686,7 @@ function CreateKSMWindow()
     local tabWidth = 108
     local tabHeight = 22
     local tabGap = 8
-    local totalTabsWidth = (tabWidth * 3) + (tabGap * 2)
+    local totalTabsWidth = (tabWidth * 4) + (tabGap * 3)
     local tabsStartX = floor(((frame:GetWidth() or 600) - totalTabsWidth) / 2 + 0.5)
 
     local function CreateTabButton(text, xOffset)
@@ -3624,6 +3761,7 @@ function CreateKSMWindow()
     local mainTab = CreateTabButton("Main", tabsStartX)
     local partyTab = CreateTabButton("Party", tabsStartX + tabWidth + tabGap)
     local guildTab = CreateTabButton("Guild", tabsStartX + (tabWidth + tabGap) * 2)
+    local recentsTab = CreateTabButton("Recents", tabsStartX + (tabWidth + tabGap) * 3)
 
     local mainContent = CreateFrame("Frame", nil, frame)
     mainContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
@@ -3637,13 +3775,19 @@ function CreateKSMWindow()
     guildContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
     guildContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
 
+    local recentsContent = CreateFrame("Frame", nil, frame)
+    recentsContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
+    recentsContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
+
     ui.ksmFrame = frame
     ui.ksmMainTab = mainTab
     ui.ksmPartyTab = partyTab
     ui.ksmGuildTab = guildTab
+    ui.ksmRecentsTab = recentsTab
     ui.ksmMainContent = mainContent
     ui.ksmPartyContent = partyContent
     ui.ksmGuildContent = guildContent
+    ui.ksmRecentsContent = recentsContent
 
     local weeklyPanel = CreateFrame("Frame", nil, mainContent, BackdropTemplateMixin and "BackdropTemplate")
     weeklyPanel:SetSize(570, 280)
@@ -3754,6 +3898,23 @@ function CreateKSMWindow()
     CreateGuildHeader("Rating", 440, 54)
     CreateGuildHeader("Portal", 502, 60)
 
+    local function CreateRecentsHeader(text, x, width)
+        local header = recentsContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        header:SetPoint("TOPLEFT", recentsContent, "TOPLEFT", x, -11)
+        header:SetWidth(width)
+        header:SetJustifyH("LEFT")
+        header:SetTextColor(1, 1, 1, 0.95)
+        header:SetText(text)
+        return header
+    end
+
+    CreateRecentsHeader("Class", 10, 44)
+    CreateRecentsHeader("Player Name", 34, 165)
+    CreateRecentsHeader("Key", 208, 34)
+    CreateRecentsHeader("Dungeon", 250, 180)
+    CreateRecentsHeader("Rating", 440, 54)
+    CreateRecentsHeader("Portal", 502, 60)
+
     local requestGuildButton = CreateFrame("Button", nil, guildContent)
     requestGuildButton:SetSize(148, 20)
     requestGuildButton:SetPoint("BOTTOM", guildContent, "BOTTOM", 0, 8)
@@ -3861,6 +4022,72 @@ function CreateKSMWindow()
     ui.ksmGuildPageText = guildPageText
     ui.ksmGuildHideOfflineCheck = hideOfflineCheck
 
+    local requestRecentsButton = CreateFrame("Button", nil, recentsContent)
+    requestRecentsButton:SetSize(156, 20)
+    requestRecentsButton:SetPoint("BOTTOM", recentsContent, "BOTTOM", 0, 8)
+
+    local requestRecentsButtonBg = requestRecentsButton:CreateTexture(nil, "BACKGROUND")
+    requestRecentsButtonBg:SetAllPoints(requestRecentsButton)
+    requestRecentsButtonBg:SetColorTexture(0.06, 0.06, 0.06, 0.88)
+
+    local requestRecentsButtonBorder = requestRecentsButton:CreateTexture(nil, "BORDER")
+    requestRecentsButtonBorder:SetPoint("TOPLEFT", requestRecentsButton, "TOPLEFT", 0, 0)
+    requestRecentsButtonBorder:SetPoint("BOTTOMRIGHT", requestRecentsButton, "BOTTOMRIGHT", 0, 0)
+    requestRecentsButtonBorder:SetColorTexture(1, 1, 1, 0.18)
+
+    local requestRecentsButtonAccent = requestRecentsButton:CreateTexture(nil, "OVERLAY")
+    requestRecentsButtonAccent:SetPoint("TOPLEFT", requestRecentsButton, "TOPLEFT", 0, 0)
+    requestRecentsButtonAccent:SetPoint("TOPRIGHT", requestRecentsButton, "TOPRIGHT", 0, 0)
+    requestRecentsButtonAccent:SetHeight(2)
+    requestRecentsButtonAccent:SetColorTexture(0.24, 0.64, 1, 0.85)
+
+    local requestRecentsButtonText = requestRecentsButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    requestRecentsButtonText:SetAllPoints(requestRecentsButton)
+    requestRecentsButtonText:SetText("Request Group Keys")
+    requestRecentsButtonText:SetTextColor(0.9, 0.95, 1, 1)
+
+    requestRecentsButton:SetScript("OnEnter", function()
+        requestRecentsButtonBg:SetColorTexture(0.1, 0.1, 0.1, 0.95)
+    end)
+    requestRecentsButton:SetScript("OnLeave", function()
+        requestRecentsButtonBg:SetColorTexture(0.06, 0.06, 0.06, 0.88)
+    end)
+    requestRecentsButton:SetScript("OnClick", function()
+        local requested = RequestGuildKeysFromAllSources(true, true)
+        RefreshKSMWindowIfVisible()
+        if requested then
+            PrintLocal("Requested group and guild keystone updates")
+        else
+            PrintLocal("Unable to request keys (not grouped/guilded or request cooldown active)")
+        end
+    end)
+
+    local recentsPrevPageButton = CreateGuildPagerButton("<", -122)
+    recentsPrevPageButton:ClearAllPoints()
+    recentsPrevPageButton:SetPoint("BOTTOM", recentsContent, "BOTTOM", -122, 8)
+    recentsPrevPageButton:SetScript("OnClick", function()
+        ui.ksmRecentsPage = max(1, (ui.ksmRecentsPage or 1) - 1)
+        RefreshKSMWindowIfVisible()
+    end)
+
+    local recentsNextPageButton = CreateGuildPagerButton(">", 122)
+    recentsNextPageButton:ClearAllPoints()
+    recentsNextPageButton:SetPoint("BOTTOM", recentsContent, "BOTTOM", 122, 8)
+    recentsNextPageButton:SetScript("OnClick", function()
+        ui.ksmRecentsPage = (ui.ksmRecentsPage or 1) + 1
+        RefreshKSMWindowIfVisible()
+    end)
+
+    local recentsPageText = recentsContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    recentsPageText:SetPoint("BOTTOM", recentsContent, "BOTTOM", 0, 32)
+    recentsPageText:SetTextColor(0.82, 0.88, 0.95, 1)
+    recentsPageText:SetText("Page 1/1")
+
+    ui.ksmRecentsRequestButton = requestRecentsButton
+    ui.ksmRecentsPrevButton = recentsPrevPageButton
+    ui.ksmRecentsNextButton = recentsNextPageButton
+    ui.ksmRecentsPageText = recentsPageText
+
     mainTab:SetScript("OnClick", function()
         SetKSMActiveTab("main")
         RefreshKSMWindow()
@@ -3871,6 +4098,10 @@ function CreateKSMWindow()
     end)
     guildTab:SetScript("OnClick", function()
         SetKSMActiveTab("guild")
+        RefreshKSMWindow()
+    end)
+    recentsTab:SetScript("OnClick", function()
+        SetKSMActiveTab("recents")
         RefreshKSMWindow()
     end)
 
@@ -3909,7 +4140,7 @@ SlashCmdList.KEYSTONEMASTER = function(message)
         return
     end
 
-    if command == "main" or command == "party" or command == "guild" then
+    if command == "main" or command == "party" or command == "guild" or command == "recents" then
         ui.ksmFrame:Show()
         SetKSMActiveTab(command)
         RefreshKSMWindow()
@@ -3921,7 +4152,7 @@ SlashCmdList.KEYSTONEMASTER = function(message)
         return
     end
 
-    PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, refresh")
+    PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, recents, refresh")
 end
 
 SLASH_KEYMASTER1 = "/keymaster"
@@ -4067,7 +4298,7 @@ function PerformLoginInitialization()
     end
     ObserveOwnedKeystone(false)
     BroadcastOwnGuildSnapshot()
-    RequestGuildKeysFromAllSources(true)
+    RequestGuildKeysFromAllSources(true, true)
     RefreshMythicUI()
 end
 
@@ -4097,9 +4328,13 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "GUILD_ROSTER_UPDATE" then
-        if KMNS.IsPlayerInGuildSafe() then
-            RequestGuildKeysFromAllSources(false)
-        end
+        RequestGuildKeysFromAllSources(false, true)
+        RefreshKSMWindowIfVisible()
+        return
+    end
+
+    if event == "GROUP_ROSTER_UPDATE" then
+        RequestGuildKeysFromAllSources(false, true)
         RefreshKSMWindowIfVisible()
         return
     end

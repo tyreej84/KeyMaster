@@ -9,6 +9,35 @@ ns.Sync = Sync
 
 local lastGuildSyncRequestAt = 0
 
+local function BuildSyncChannels(ctx)
+    local channels = {}
+    local seen = {}
+
+    local function AddChannel(channel)
+        if seen[channel] then
+            return
+        end
+
+        seen[channel] = true
+        table.insert(channels, channel)
+    end
+
+    if ctx.IsPlayerInGuildSafe and ctx.IsPlayerInGuildSafe() then
+        AddChannel("GUILD")
+    end
+
+    local inInstanceGroup = IsInGroup and LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
+    if inInstanceGroup then
+        AddChannel("INSTANCE_CHAT")
+    elseif IsInRaid and IsInRaid() then
+        AddChannel("RAID")
+    elseif IsInGroup and IsInGroup() then
+        AddChannel("PARTY")
+    end
+
+    return channels
+end
+
 local function ClampNumber(value, minValue, maxValue, defaultValue)
     local numberValue = tonumber(value)
     if type(numberValue) ~= "number" then
@@ -90,8 +119,12 @@ local function GetLibDeflateInstance(ctx)
     return nil
 end
 
-local function SendDetailsOpenRaidKeystoneRequest(ctx)
-    if not (IsInGuild and IsInGuild() and C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+local function SendDetailsOpenRaidKeystoneRequest(ctx, channel)
+    if type(channel) ~= "string" or channel == "" then
+        return false
+    end
+
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then
         return false
     end
 
@@ -110,40 +143,48 @@ local function SendDetailsOpenRaidKeystoneRequest(ctx)
         return false
     end
 
-    pcall(C_ChatInfo.SendAddonMessage, ctx.DETAILS_OPENRAID_PREFIX, encoded, "GUILD")
+    pcall(C_ChatInfo.SendAddonMessage, ctx.DETAILS_OPENRAID_PREFIX, encoded, channel)
     return true
 end
 
 function Sync.RequestGuildSnapshots(ctx)
-    if not (ctx.IsPlayerInGuildSafe() and C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then
         return
     end
 
-    pcall(C_ChatInfo.SendAddonMessage, ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, "GUILD")
+    for _, channel in ipairs(BuildSyncChannels(ctx)) do
+        pcall(C_ChatInfo.SendAddonMessage, ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, channel)
+    end
 end
 
 function Sync.RequestGuildKeysFromAllSources(ctx, force, includeExternal)
-    if not ctx.IsPlayerInGuildSafe() then
-        return false
-    end
-
     local now = GetTime and GetTime() or 0
     if not force and now > 0 and (now - lastGuildSyncRequestAt) < 8 then
         return false
     end
+
+    local channels = BuildSyncChannels(ctx)
+    if #channels == 0 then
+        return false
+    end
+
     lastGuildSyncRequestAt = now
 
-    if C_GuildInfo and C_GuildInfo.GuildRoster then
+    if ctx.IsPlayerInGuildSafe and ctx.IsPlayerInGuildSafe() and C_GuildInfo and C_GuildInfo.GuildRoster then
         pcall(C_GuildInfo.GuildRoster)
-    elseif GuildRoster then
+    elseif ctx.IsPlayerInGuildSafe and ctx.IsPlayerInGuildSafe() and GuildRoster then
         pcall(GuildRoster)
     end
 
-    Sync.RequestGuildSnapshots(ctx)
+    for _, channel in ipairs(channels) do
+        pcall(C_ChatInfo.SendAddonMessage, ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, channel)
+    end
 
     if includeExternal and C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        pcall(C_ChatInfo.SendAddonMessage, ctx.ASTRAL_KEYS_PREFIX, "request", "GUILD")
-        SendDetailsOpenRaidKeystoneRequest(ctx)
+        for _, channel in ipairs(channels) do
+            pcall(C_ChatInfo.SendAddonMessage, ctx.ASTRAL_KEYS_PREFIX, "request", channel)
+            SendDetailsOpenRaidKeystoneRequest(ctx, channel)
+        end
     end
 
     return true
@@ -260,7 +301,7 @@ function Sync.HandleAddonMessage(ctx, prefix, message, channel, sender)
     local isGuildChannel = channel == "GUILD"
     local isGroupChannel = channel == "PARTY" or channel == "RAID" or channel == "INSTANCE_CHAT"
 
-    if prefix == ctx.KSM_ADDON_PREFIX and isGuildChannel then
+    if prefix == ctx.KSM_ADDON_PREFIX and (isGuildChannel or isGroupChannel) then
         HandleKeyMasterAddonMessage(ctx, message, sender)
         ctx.RefreshKSMWindowIfVisible()
         return

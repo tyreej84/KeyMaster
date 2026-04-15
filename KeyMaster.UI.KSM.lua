@@ -36,10 +36,12 @@ function KSM.SetActiveTab(ctx, tabName)
     local showMain = ui.ksmActiveTab == "main"
     local showParty = ui.ksmActiveTab == "party"
     local showGuild = ui.ksmActiveTab == "guild"
+    local showRecents = ui.ksmActiveTab == "recents"
 
     if ui.ksmMainContent then if showMain then ui.ksmMainContent:Show() else ui.ksmMainContent:Hide() end end
     if ui.ksmPartyContent then if showParty then ui.ksmPartyContent:Show() else ui.ksmPartyContent:Hide() end end
     if ui.ksmGuildContent then if showGuild then ui.ksmGuildContent:Show() else ui.ksmGuildContent:Hide() end end
+    if ui.ksmRecentsContent then if showRecents then ui.ksmRecentsContent:Show() else ui.ksmRecentsContent:Hide() end end
 
     if ui.ksmMainTab then
         ui.ksmMainTab.isSelected = showMain
@@ -78,6 +80,19 @@ function KSM.SetActiveTab(ctx, tabName)
         local guildLabel = ui.ksmGuildTab.label or (ui.ksmGuildTab.GetFontString and ui.ksmGuildTab:GetFontString())
         if guildLabel then
             guildLabel:SetTextColor(showGuild and 1 or 0.8, showGuild and 0.9 or 0.83, showGuild and 0.68 or 0.86, 1)
+        end
+    end
+    if ui.ksmRecentsTab then
+        ui.ksmRecentsTab.isSelected = showRecents
+        if ui.ksmRecentsTab.bg then
+            ui.ksmRecentsTab.bg:SetColorTexture(showRecents and 0.09 or 0.04, showRecents and 0.09 or 0.04, showRecents and 0.11 or 0.05, showRecents and 0.96 or 0.85)
+        end
+        if ui.ksmRecentsTab.activeAccent then
+            ui.ksmRecentsTab.activeAccent:SetColorTexture(0.24, 0.64, 1, showRecents and 0.95 or 0)
+        end
+        local recentsLabel = ui.ksmRecentsTab.label or (ui.ksmRecentsTab.GetFontString and ui.ksmRecentsTab:GetFontString())
+        if recentsLabel then
+            recentsLabel:SetTextColor(showRecents and 1 or 0.8, showRecents and 0.9 or 0.83, showRecents and 0.68 or 0.86, 1)
         end
     end
 end
@@ -639,8 +654,6 @@ function KSM.RefreshGuildTab(ctx)
     local TryGetMythicScoreForIdentifier = ctx.TryGetMythicScoreForIdentifier
     local IsGuildMemberRecent = ctx.IsGuildMemberRecent
     local GetPortalSpellIDForMap = ctx.GetPortalSpellIDForMap
-    local GetGuildMemberStore = ctx.GetGuildMemberStore
-    local KSM_GUILD_RECENT_DAYS = ctx.KSM_GUILD_RECENT_DAYS
     local GetClassColorInfo = ctx.GetClassColorInfo
     local ApplyClassIcon = ctx.ApplyClassIcon
     local FormatDungeonLabel = ctx.FormatDungeonLabel
@@ -728,8 +741,9 @@ function KSM.RefreshGuildTab(ctx)
                 local normalizedKeyLevel = tonumber(keyLevel) or 0
                 local normalizedRating = tonumber(rating) or 0
                 local isRecent = IsGuildMemberRecent(index, onlineNow, cache)
+                local hasKnownKey = normalizedMapID > 0 and normalizedKeyLevel > 0
 
-                if isPlayer or isRecent then
+                if hasKnownKey and (isPlayer or isRecent) then
                     local rowEntry = {
                         name = name or fullName,
                         class = isPlayer and playerClass or cache.class or classFile,
@@ -742,62 +756,6 @@ function KSM.RefreshGuildTab(ctx)
                     table.insert(entries, rowEntry)
                     entryByName[rowEntry.name] = true
                 end
-            end
-        end
-    end
-
-    if playerName and not entryByName[playerName] then
-        local fallbackMapID = tonumber(playerMapID) or 0
-        local fallbackKeyLevel = tonumber(playerKeyLevel) or 0
-        table.insert(entries, {
-            name = playerName,
-            class = playerClass,
-            mapID = fallbackMapID,
-            keyLevel = fallbackKeyLevel,
-            rating = tonumber(playerScore) or 0,
-            spellID = GetPortalSpellIDForMap(fallbackMapID),
-            online = true,
-        })
-        entryByName[playerName] = true
-    end
-
-    local store = GetGuildMemberStore()
-    for cachedName, cache in pairs(store) do
-        local normalized = GetNormalizedPlayerName(cachedName) or cachedName
-        if not entryByName[normalized] then
-            local isPlayer = normalized == playerName
-            local roster = rosterByName[normalized]
-            local mapID = isPlayer and playerMapID or cache.mapID
-            local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
-            local rating = isPlayer and playerScore or cache.rating
-            local normalizedMapID = tonumber(mapID) or 0
-            local normalizedKeyLevel = tonumber(keyLevel) or 0
-            local normalizedRating = tonumber(rating) or 0
-
-            if not normalizedRating or normalizedRating <= 0 then
-                local apiScore = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, roster and roster.guid, normalized)
-                if apiScore then
-                    normalizedRating = floor(apiScore + 0.5)
-                end
-            end
-
-            local updatedAt = tonumber(cache and cache.updatedAt)
-            local now = GetServerTime and GetServerTime() or time()
-            local isRecent = updatedAt and ((now - updatedAt) <= (KSM_GUILD_RECENT_DAYS * 86400)) or false
-            local hasCachedData = normalizedMapID > 0 or normalizedKeyLevel > 0 or normalizedRating > 0
-
-            if isPlayer or (isRecent and hasCachedData) then
-                local rowEntry = {
-                    name = normalized,
-                    class = isPlayer and playerClass or cache.class or (roster and roster.classFile),
-                    mapID = normalizedMapID,
-                    keyLevel = normalizedKeyLevel,
-                    rating = normalizedRating,
-                    spellID = GetPortalSpellIDForMap(normalizedMapID),
-                    online = isPlayer or (roster and roster.online or false),
-                }
-                table.insert(entries, rowEntry)
-                entryByName[rowEntry.name] = true
             end
         end
     end
@@ -864,7 +822,7 @@ function KSM.RefreshGuildTab(ctx)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", ui.ksmGuildContent, "TOPLEFT", 10, -52)
         row.classIcon:Hide()
-        row.nameText:SetText(ui.ksmHideOffline and "No online guild key data" or "No recent guild key data (last 7 days)")
+        row.nameText:SetText(ui.ksmHideOffline and "No online guild members with known keys" or "No guild members with known keys")
         row.nameText:SetTextColor(1, 1, 1, 1)
         row.keyText:SetText("")
         row.dungeonText:SetText("")
@@ -931,5 +889,168 @@ function KSM.RefreshGuildTab(ctx)
 
     for index = 1, #ui.ksmGuildLines do
         ui.ksmGuildLines[index]:Hide()
+    end
+end
+
+function KSM.RefreshRecentsTab(ctx)
+    local ui = ctx.ui
+    if not ui or not ui.ksmRecentsContent then
+        return
+    end
+
+    local floor = ctx.floor
+    local max = ctx.max
+    local min = ctx.min
+    local EnsureKSMRecentRow = ctx.EnsureKSMRecentRow
+    local GetGuildMemberStore = ctx.GetGuildMemberStore
+    local GetPortalSpellIDForMap = ctx.GetPortalSpellIDForMap
+    local GetClassColorInfo = ctx.GetClassColorInfo
+    local ApplyClassIcon = ctx.ApplyClassIcon
+    local FormatDungeonLabel = ctx.FormatDungeonLabel
+    local IsPortalSpellKnown = ctx.IsPortalSpellKnown
+    local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
+    local TryGetMythicScoreForIdentifier = ctx.TryGetMythicScoreForIdentifier
+
+    local entries = {}
+    local store = GetGuildMemberStore()
+    for cachedName, cache in pairs(store) do
+        if type(cachedName) == "string" and type(cache) == "table" then
+            local mapID = tonumber(cache.mapID) or 0
+            local keyLevel = tonumber(cache.keyLevel) or 0
+            if mapID > 0 and keyLevel > 0 then
+                local rating = tonumber(cache.rating) or 0
+                if rating <= 0 and type(TryGetMythicScoreForIdentifier) == "function" then
+                    local apiScore = TryGetMythicScoreForIdentifier(cachedName)
+                    if type(apiScore) == "number" and apiScore > 0 then
+                        rating = floor(apiScore + 0.5)
+                    end
+                end
+
+                table.insert(entries, {
+                    name = cachedName,
+                    class = cache.class,
+                    mapID = mapID,
+                    keyLevel = keyLevel,
+                    rating = rating,
+                    spellID = GetPortalSpellIDForMap(mapID),
+                    updatedAt = tonumber(cache.updatedAt) or 0,
+                })
+            end
+        end
+    end
+
+    table.sort(entries, function(left, right)
+        local leftUpdated = tonumber(left.updatedAt) or 0
+        local rightUpdated = tonumber(right.updatedAt) or 0
+        if leftUpdated ~= rightUpdated then
+            return leftUpdated > rightUpdated
+        end
+
+        local leftLevel = tonumber(left.keyLevel) or 0
+        local rightLevel = tonumber(right.keyLevel) or 0
+        if leftLevel ~= rightLevel then
+            return leftLevel > rightLevel
+        end
+
+        return (left.name or "") < (right.name or "")
+    end)
+
+    ui.ksmRecentsTotalPages = max(1, math.ceil(#entries / 15))
+    ui.ksmRecentsPage = min(max(ui.ksmRecentsPage or 1, 1), ui.ksmRecentsTotalPages)
+
+    if ui.ksmRecentsPageText then
+        ui.ksmRecentsPageText:SetText(string.format("Page %d/%d", ui.ksmRecentsPage, ui.ksmRecentsTotalPages))
+    end
+    if ui.ksmRecentsPrevButton then
+        if ui.ksmRecentsPage > 1 then
+            ui.ksmRecentsPrevButton:Enable()
+            ui.ksmRecentsPrevButton:SetAlpha(1)
+        else
+            ui.ksmRecentsPrevButton:Disable()
+            ui.ksmRecentsPrevButton:SetAlpha(0.45)
+        end
+    end
+    if ui.ksmRecentsNextButton then
+        if ui.ksmRecentsPage < ui.ksmRecentsTotalPages then
+            ui.ksmRecentsNextButton:Enable()
+            ui.ksmRecentsNextButton:SetAlpha(1)
+        else
+            ui.ksmRecentsNextButton:Disable()
+            ui.ksmRecentsNextButton:SetAlpha(0.45)
+        end
+    end
+
+    if #entries == 0 then
+        local row = EnsureKSMRecentRow(1)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", ui.ksmRecentsContent, "TOPLEFT", 10, -52)
+        row.classIcon:Hide()
+        row.nameText:SetText("No recent key data yet")
+        row.nameText:SetTextColor(1, 1, 1, 1)
+        row.keyText:SetText("")
+        row.dungeonText:SetText("Join a group and request keys")
+        row.ratingText:SetText("")
+        row.teleportButton:Hide()
+        row:Show()
+        for index = 2, #ui.ksmRecentsRows do
+            ui.ksmRecentsRows[index]:Hide()
+        end
+        for index = 1, #ui.ksmRecentsLines do
+            ui.ksmRecentsLines[index]:Hide()
+        end
+        return
+    end
+
+    local pageStart = ((ui.ksmRecentsPage - 1) * 15) + 1
+    local pageEnd = min(pageStart + 15 - 1, #entries)
+
+    local y = -56
+    local renderedCount = 0
+    for index = pageStart, pageEnd do
+        local entry = entries[index]
+        renderedCount = renderedCount + 1
+        local row = EnsureKSMRecentRow(renderedCount)
+        local r, g, b = GetClassColorInfo(entry.class)
+
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", ui.ksmRecentsContent, "TOPLEFT", 10, y)
+        ApplyClassIcon(row.classIcon, entry.class)
+        row.classIcon:Show()
+        row.nameText:SetText(entry.name or "Unknown")
+        row.nameText:SetTextColor(r, g, b, 1)
+        row.keyText:SetText(entry.keyLevel > 0 and string.format("+%d", entry.keyLevel) or "-")
+        row.dungeonText:SetText(entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key")
+        row.keyText:SetTextColor(1, 0.82, 0.2, 1)
+        row.dungeonText:SetTextColor(0.95, 0.95, 0.95, 1)
+        row.ratingText:SetText(entry.rating > 0 and tostring(entry.rating) or "-")
+        row.ratingText:SetTextColor(0.95, 0.95, 0.95, 1)
+
+        if entry.spellID then
+            row.teleportButton.spellID = entry.spellID
+            local known = ConfigurePortalActionButton and ConfigurePortalActionButton(row.teleportButton, entry.spellID)
+            row.teleportButton:Show()
+            row.teleportButton.label:SetText("Teleport")
+            if known == nil then
+                known = IsPortalSpellKnown and IsPortalSpellKnown(entry.spellID)
+            end
+            row.teleportButton.label:SetTextColor(known and 1 or 0.55, known and 1 or 0.55, known and 1 or 0.55, 1)
+        else
+            row.teleportButton.spellID = nil
+            if ConfigurePortalActionButton then
+                ConfigurePortalActionButton(row.teleportButton, nil)
+            end
+            row.teleportButton:Hide()
+        end
+
+        row:Show()
+        y = y - 24
+    end
+
+    for index = renderedCount + 1, #ui.ksmRecentsRows do
+        ui.ksmRecentsRows[index]:Hide()
+    end
+
+    for index = 1, #ui.ksmRecentsLines do
+        ui.ksmRecentsLines[index]:Hide()
     end
 end
