@@ -10,25 +10,21 @@ local strfind = string.find
 local strlower = string.lower
 local strmatch = string.match
 local strtrim = strtrim or function(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
-local tonumber = tonumber
-local unpack = unpack or table.unpack
 local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
+local RefreshMythicUI
 
 local frame = CreateFrame("Frame")
-if C_Timer and type(C_Timer.After) == "function" then
-    C_Timer.After(0, function()
-        frame:RegisterEvent("ADDON_LOADED")
-    end)
-else
-    frame:RegisterEvent("ADDON_LOADED")
-end
+frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 local RUNTIME_EVENTS = {
     "CHAT_MSG_ADDON",
     "GUILD_ROSTER_UPDATE",
     "PLAYER_LOGIN",
     "PLAYER_ENTERING_WORLD",
+    "PLAYER_LOGOUT",
     "PLAYER_REGEN_ENABLED",
     "CHALLENGE_MODE_START",
     "CHALLENGE_MODE_COMPLETED",
@@ -49,19 +45,31 @@ local RUNTIME_EVENTS = {
 }
 
 local runtimeEventsRegistered = false
+local databaseSanitized = false
+local runtimeRegistrationDeferred = false
 
 local function RegisterRuntimeEvents()
     if runtimeEventsRegistered then
-        return
+        return true
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        runtimeRegistrationDeferred = true
+        return false
+    end
+
+    for _, eventName in ipairs(RUNTIME_EVENTS) do
+        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
+            frame:RegisterEvent(eventName)
+        end
     end
 
     runtimeEventsRegistered = true
-    for _, eventName in ipairs(RUNTIME_EVENTS) do
-        frame:RegisterEvent(eventName)
-    end
+    runtimeRegistrationDeferred = false
+    return true
 end
 
-local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KeyStoneMastery:"
+local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
 local KEYSTONE_ITEM_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS or { [180653] = true, [158923] = true, [151086] = true }
 local KEYSTONE_BAG_SLOTS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_BAG_SLOTS or { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
 local KSM_PORTAL_SPELL_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KSM_PORTAL_SPELL_IDS or {}
@@ -79,15 +87,8 @@ local DETAILS_OPENRAID_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_OPENRA
 local DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX or "J"
 local DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX or "K"
 local CLASS_ID_TO_FILE = _G.KeyMasterNS and _G.KeyMasterNS.CLASS_ID_TO_FILE or {}
-local KSM_VAULT_TEXTURE_EMPTY = _G.KeyMasterNS and _G.KeyMasterNS.KSM_VAULT_TEXTURE_EMPTY or "Interface\\AddOns\\KeyMaster\\Assets\\UI\\Vault.png"
-local KSM_VAULT_TEXTURE_GLOWY = _G.KeyMasterNS and _G.KeyMasterNS.KSM_VAULT_TEXTURE_GLOWY or "Interface\\AddOns\\KeyMaster\\Assets\\UI\\Vault_Glowy.png"
-local REQUEST_COMMAND_SET = _G.KeyMasterNS and _G.KeyMasterNS.REQUEST_COMMAND_SET or {}
-local MISMATCH_TOAST_COOLDOWN_SECONDS = _G.KeyMasterNS and _G.KeyMasterNS.MISMATCH_TOAST_COOLDOWN_SECONDS or 2
-local UI_REFRESH_INTERVAL_SECONDS = _G.KeyMasterNS and _G.KeyMasterNS.UI_REFRESH_INTERVAL_SECONDS or 0.2
-local COMPLETION_DISPLAY_SECONDS = _G.KeyMasterNS and _G.KeyMasterNS.COMPLETION_DISPLAY_SECONDS or 90
 local CHALLENGERS_PERIL_AFFIX_ID = _G.KeyMasterNS and _G.KeyMasterNS.CHALLENGERS_PERIL_AFFIX_ID or 152
 local BREAK_TIMER_BLUE = _G.KeyMasterNS and _G.KeyMasterNS.BREAK_TIMER_BLUE or { 0.15, 0.55, 1.00, 0.90 }
-local KSM_GUILD_RECENT_DAYS = _G.KeyMasterNS and _G.KeyMasterNS.KSM_GUILD_RECENT_DAYS or 7
 local DEFAULT_DB = _G.KeyMasterNS and _G.KeyMasterNS.DEFAULT_DB or {
     ui = {
         enabled = true,
@@ -101,6 +102,7 @@ local DEFAULT_DB = _G.KeyMasterNS and _G.KeyMasterNS.DEFAULT_DB or {
     guild = {
         members = {},
     },
+    characters = {},
 }
 
 local lastMismatchToastAt = 0
@@ -124,16 +126,20 @@ local ui = {
     ksmPartyTab = nil,
     ksmGuildTab = nil,
     ksmRecentsTab = nil,
+    ksmWarbandTab = nil,
     ksmMainContent = nil,
     ksmPartyContent = nil,
     ksmGuildContent = nil,
     ksmRecentsContent = nil,
+    ksmWarbandContent = nil,
     ksmPartyLines = {},
     ksmPartyRows = {},
     ksmGuildLines = {},
     ksmGuildRows = {},
     ksmRecentsLines = {},
     ksmRecentsRows = {},
+    ksmWarbandLines = {},
+    ksmWarbandRows = {},
     ksmGuildPage = 1,
     ksmGuildTotalPages = 1,
     ksmGuildPrevButton = nil,
@@ -144,6 +150,11 @@ local ui = {
     ksmRecentsPrevButton = nil,
     ksmRecentsNextButton = nil,
     ksmRecentsPageText = nil,
+    ksmWarbandPage = 1,
+    ksmWarbandTotalPages = 1,
+    ksmWarbandPrevButton = nil,
+    ksmWarbandNextButton = nil,
+    ksmWarbandPageText = nil,
     ksmGuildHideOfflineCheck = nil,
     ksmHideOffline = false,
     ksmPortalButtons = {},
@@ -159,6 +170,24 @@ local CHAT_EVENTS = _G.KeyMasterNS and _G.KeyMasterNS.CHAT_EVENTS or {}
 local CHAT_EVENT_TO_CHANNEL = _G.KeyMasterNS and _G.KeyMasterNS.CHAT_EVENT_TO_CHANNEL or {}
 
 local MAX_DEFERRED_CHAT_MESSAGES = _G.KeyMasterNS and _G.KeyMasterNS.MAX_DEFERRED_CHAT_MESSAGES or 10
+local MergeNormalizedNameStore
+local TrimStoreByEntryLimit
+local MAX_GUILD_MEMBER_ENTRIES = 800
+local MAX_CHARACTER_ENTRIES = 120
+
+local function ClampNumber(value, minimum, maximum, fallback)
+    local n = tonumber(value)
+    if not n then
+        return fallback
+    end
+    if minimum and n < minimum then
+        n = minimum
+    end
+    if maximum and n > maximum then
+        n = maximum
+    end
+    return n
+end
 
 
 local function IsCombatLockdownActive()
@@ -228,11 +257,23 @@ local function NormalizePlayerDisplayName(name, realm)
         return "Unknown"
     end
 
-    if type(realm) == "string" and realm ~= "" then
-        return string.format("%s-%s", name, realm)
+    local normalizedName = strtrim(name)
+    if normalizedName == "" then
+        return "Unknown"
     end
 
-    return name
+    -- Storage must not synthesize realm suffixes from local context.
+    -- Keep the incoming name as authoritative; only normalize whitespace around an existing suffix.
+    local baseName, existingRealm = normalizedName:match("^([^-]+)%-(.+)$")
+    if baseName and existingRealm then
+        local realmTag = existingRealm:gsub("%s+", "")
+        if realmTag ~= "" then
+            return string.format("%s-%s", strtrim(baseName), realmTag)
+        end
+        return strtrim(baseName)
+    end
+
+    return normalizedName
 end
 
 local function RecordDeathEntry(playerName)
@@ -602,6 +643,23 @@ local function InitializeDatabase()
         KeyMasterDB.guild.members = {}
     end
 
+    if type(KeyMasterDB.characters) ~= "table" then
+        KeyMasterDB.characters = {}
+    end
+
+    if not databaseSanitized and type(MergeNormalizedNameStore) == "function" then
+        KeyMasterDB.guild.members = MergeNormalizedNameStore(KeyMasterDB.guild.members)
+        KeyMasterDB.characters = MergeNormalizedNameStore(KeyMasterDB.characters)
+        TrimStoreByEntryLimit(KeyMasterDB.guild.members, MAX_GUILD_MEMBER_ENTRIES)
+        TrimStoreByEntryLimit(KeyMasterDB.characters, MAX_CHARACTER_ENTRIES)
+        databaseSanitized = true
+    end
+
+    -- Legacy cleanup: debugLog should not persist in SavedVariables.
+    if KeyMasterDB.debugLog ~= nil then
+        KeyMasterDB.debugLog = nil
+    end
+
     return KeyMasterDB
 end
 
@@ -612,12 +670,369 @@ local function GetGuildMemberStore()
     return db.guild.members
 end
 
-local function GetNormalizedPlayerName(name)
-    if type(name) ~= "string" or name == "" then
+local function GetOwnCharacterStore()
+    local db = InitializeDatabase()
+    db.characters = db.characters or {}
+    return db.characters
+end
+
+local function BuildSanitizedStoreEntry(normalizedName, rawEntry)
+    if type(normalizedName) ~= "string" or normalizedName == "" then
+        return nil
+    end
+    if type(rawEntry) ~= "table" then
         return nil
     end
 
-    return Ambiguate and Ambiguate(name, "guild") or name
+    local mapID = ClampNumber(rawEntry.mapID, 0, 20000, 0) or 0
+    local keyLevel = ClampNumber(rawEntry.keyLevel, 0, 50, 0) or 0
+    local rating = ClampNumber(rawEntry.rating, 0, 20000, 0) or 0
+    local updatedAt = ClampNumber(rawEntry.updatedAt, 0, nil, 0) or 0
+    local hiddenInRecents = rawEntry.hiddenInRecents == true
+
+    local classFile = type(rawEntry.class) == "string" and rawEntry.class or nil
+    if classFile and #classFile > 24 then
+        classFile = classFile:sub(1, 24)
+    end
+
+    local source = nil
+    if type(rawEntry.source) == "string" then
+        source = strlower(rawEntry.source)
+        if source == "manual-seed" then
+            source = nil
+        elseif #source > 32 then
+            source = source:sub(1, 32)
+        end
+    end
+
+    local sanitized = {
+        name = normalizedName,
+        mapID = mapID,
+        keyLevel = keyLevel,
+        rating = rating,
+        updatedAt = updatedAt,
+    }
+
+    if classFile and classFile ~= "" then
+        sanitized.class = classFile
+    end
+    if source and source ~= "" then
+        sanitized.source = source
+    end
+    if hiddenInRecents then
+        sanitized.hiddenInRecents = true
+    end
+
+    return sanitized
+end
+
+TrimStoreByEntryLimit = function(store, maxEntries)
+    if type(store) ~= "table" then
+        return
+    end
+    local limit = tonumber(maxEntries) or 0
+    if limit <= 0 then
+        return
+    end
+
+    local entries = {}
+    local count = 0
+    for key, entry in pairs(store) do
+        count = count + 1
+        entries[#entries + 1] = {
+            key = key,
+            updatedAt = type(entry) == "table" and (tonumber(entry.updatedAt) or 0) or 0,
+            keyLevel = type(entry) == "table" and (tonumber(entry.keyLevel) or 0) or 0,
+        }
+    end
+
+    if count <= limit then
+        return
+    end
+
+    table.sort(entries, function(left, right)
+        if left.updatedAt ~= right.updatedAt then
+            return left.updatedAt > right.updatedAt
+        end
+        if left.keyLevel ~= right.keyLevel then
+            return left.keyLevel > right.keyLevel
+        end
+        return tostring(left.key) < tostring(right.key)
+    end)
+
+    for index = limit + 1, #entries do
+        store[entries[index].key] = nil
+    end
+end
+
+local function NormalizeRealmTag(realm)
+    if type(realm) ~= "string" or realm == "" then
+        return nil
+    end
+
+    local function CollapseAtCamelBoundary(token)
+        if type(token) ~= "string" then
+            return token
+        end
+
+        for index = 2, #token do
+            local current = token:sub(index, index)
+            local previous = token:sub(index - 1, index - 1)
+            if current:match("%u") and previous:match("[%l%d]") then
+                return token:sub(1, index - 1)
+            end
+        end
+
+        return token
+    end
+
+    local function CollapseTrailingRepeatedSegment(token)
+        if type(token) ~= "string" then
+            return token
+        end
+
+        local length = #token
+        if length < 6 then
+            return token
+        end
+
+        for unitLength = 3, math.floor(length / 2) do
+            local unit = token:sub(length - unitLength + 1)
+            if unit ~= "" then
+                local repeats = 0
+                local cursor = length
+                while cursor - unitLength + 1 >= 1 and token:sub(cursor - unitLength + 1, cursor) == unit do
+                    repeats = repeats + 1
+                    cursor = cursor - unitLength
+                end
+
+                if repeats >= 2 then
+                    local prefix = token:sub(1, cursor)
+                    if prefix ~= "" and prefix ~= unit then
+                        return prefix
+                    end
+                    return unit
+                end
+            end
+        end
+
+        return token
+    end
+
+    local function CollapseRepeatedRealmWord(token)
+        if type(token) ~= "string" then
+            return token
+        end
+
+        local length = #token
+        if length < 6 then
+            return token
+        end
+
+        for unitLength = 3, math.floor(length / 2) do
+            if (length % unitLength) == 0 then
+                local unit = token:sub(1, unitLength)
+                local repeats = length / unitLength
+                if repeats >= 2 then
+                    local rebuilt = ""
+                    for _ = 1, repeats do
+                        rebuilt = rebuilt .. unit
+                    end
+                    if rebuilt == token then
+                        return unit
+                    end
+                end
+            end
+        end
+
+        return token
+    end
+
+    local normalized = realm:gsub("%f[%a][Ss][Ee][Rr][Vv][Ee][Rr]%f[%A]", "")
+    normalized = normalized:gsub("[%s_]+", "")
+    normalized = normalized:gsub("^-+", ""):gsub("-+$", "")
+    normalized = CollapseTrailingRepeatedSegment(normalized)
+    normalized = CollapseRepeatedRealmWord(normalized)
+    normalized = CollapseAtCamelBoundary(normalized)
+    if normalized == "" then
+        return nil
+    end
+
+    return normalized
+end
+
+local function GetCurrentRealmTag()
+    if UnitFullName then
+        local _, unitRealm = UnitFullName("player")
+        local normalizedUnitRealm = NormalizeRealmTag(unitRealm)
+        if normalizedUnitRealm then
+            return normalizedUnitRealm
+        end
+    end
+
+    if GetRealmName then
+        return NormalizeRealmTag(GetRealmName())
+    end
+
+    return nil
+end
+
+local function CollapseRepeatedRealmSuffix(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+
+    -- Defensive cap: malformed names can explode into repeated realm chains and stall the UI.
+    if #name > 128 then
+        name = name:sub(1, 128)
+    end
+
+    local baseName, realmSuffix = name:match("^([^-]+)%-(.+)$")
+    if not baseName or not realmSuffix then
+        return name
+    end
+
+    local normalizedRealmSuffix = realmSuffix:gsub("%s+", "")
+    if normalizedRealmSuffix == "" then
+        return baseName
+    end
+
+    local firstRealmToken = realmSuffix:match("^([^-]+)")
+    local canonicalRealm = NormalizeRealmTag(firstRealmToken)
+    if not canonicalRealm then
+        return string.format("%s-%s", baseName, normalizedRealmSuffix)
+    end
+
+    local tokenCount = 0
+    local hasAnyToken = false
+    for token in realmSuffix:gmatch("([^-]+)") do
+        hasAnyToken = true
+        tokenCount = tokenCount + 1
+        if tokenCount > 8 then
+            -- Too many realm fragments indicates corrupted input; keep only base + canonical realm.
+            return string.format("%s-%s", baseName, canonicalRealm)
+        end
+        if NormalizeRealmTag(token) ~= canonicalRealm then
+            return string.format("%s-%s", baseName, canonicalRealm)
+        end
+    end
+
+    if not hasAnyToken then
+        return baseName
+    end
+
+    return string.format("%s-%s", baseName, canonicalRealm)
+end
+
+local function NormalizeLoosePlayerName(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+
+    local cleaned = strtrim(name)
+    if cleaned == "" then
+        return nil
+    end
+
+    cleaned = cleaned:gsub("%s*%-%s*", "-")
+
+    local baseName, realmSuffix = cleaned:match("^([^-]+)%-(.+)$")
+    if baseName and realmSuffix then
+        baseName = strtrim(baseName)
+        realmSuffix = strtrim(realmSuffix)
+        if baseName == "" then
+            return nil
+        end
+
+        -- Keep storage stable: preserve Name-Realm format but collapse realm suffix to one canonical token.
+        local canonicalRealm = nil
+        realmSuffix = realmSuffix:gsub("%s*%-%s*", "-")
+        for token in realmSuffix:gmatch("([^-]+)") do
+            local normalizedToken = NormalizeRealmTag(token)
+            if normalizedToken then
+                canonicalRealm = normalizedToken
+                break
+            end
+        end
+
+        if not canonicalRealm then
+            return baseName
+        end
+
+        return string.format("%s-%s", baseName, canonicalRealm)
+    end
+
+    -- Character names cannot contain spaces; do not synthesize cross-realm names from loose text.
+    if cleaned:find("%s") then
+        return nil
+    end
+
+    return cleaned
+end
+
+local function GetNormalizedPlayerName(name)
+    local trimmed = NormalizeLoosePlayerName(name)
+    if type(trimmed) ~= "string" or trimmed == "" then
+        return nil
+    end
+
+    if #trimmed > 128 then
+        trimmed = trimmed:sub(1, 128)
+    end
+
+    if #trimmed > 80 then
+        return nil
+    end
+
+    return trimmed
+end
+
+MergeNormalizedNameStore = function(store)
+    if type(store) ~= "table" then
+        return {}
+    end
+
+    local merged = {}
+
+    local function ShouldReplaceEntry(existing, candidate)
+        if type(existing) ~= "table" then
+            return true
+        end
+        if type(candidate) ~= "table" then
+            return false
+        end
+
+        local existingUpdated = tonumber(existing.updatedAt) or 0
+        local candidateUpdated = tonumber(candidate.updatedAt) or 0
+        if candidateUpdated ~= existingUpdated then
+            return candidateUpdated > existingUpdated
+        end
+
+        local existingKey = tonumber(existing.keyLevel) or 0
+        local candidateKey = tonumber(candidate.keyLevel) or 0
+        if candidateKey ~= existingKey then
+            return candidateKey > existingKey
+        end
+
+        local existingRating = tonumber(existing.rating) or 0
+        local candidateRating = tonumber(candidate.rating) or 0
+        return candidateRating > existingRating
+    end
+
+    for rawKey, rawEntry in pairs(store) do
+        if type(rawKey) == "string" and type(rawEntry) == "table" then
+            local normalizedKey = GetNormalizedPlayerName(rawEntry.name) or GetNormalizedPlayerName(rawKey)
+            if type(normalizedKey) == "string" and normalizedKey ~= "" then
+                local candidate = BuildSanitizedStoreEntry(normalizedKey, rawEntry)
+
+                if candidate and ShouldReplaceEntry(merged[normalizedKey], candidate) then
+                    merged[normalizedKey] = candidate
+                end
+            end
+        end
+    end
+
+    return merged
 end
 
 local function SaveGuildMemberData(name, data)
@@ -627,15 +1042,27 @@ local function SaveGuildMemberData(name, data)
     end
 
     local store = GetGuildMemberStore()
-    store[normalized] = store[normalized] or {}
-    local entry = store[normalized]
+    local now = GetServerTime and GetServerTime() or time()
+    local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
+    candidate.updatedAt = now
+    candidate.name = normalized
+    store[normalized] = candidate
+    TrimStoreByEntryLimit(store, MAX_GUILD_MEMBER_ENTRIES)
+end
 
-    for key, value in pairs(data) do
-        entry[key] = value
+local function SaveOwnCharacterData(name, data)
+    local normalized = GetNormalizedPlayerName(name)
+    if not normalized or type(data) ~= "table" then
+        return
     end
 
-    entry.name = normalized
-    entry.updatedAt = GetServerTime and GetServerTime() or time()
+    local store = GetOwnCharacterStore()
+    local now = GetServerTime and GetServerTime() or time()
+    local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
+    candidate.updatedAt = now
+    candidate.name = normalized
+    store[normalized] = candidate
+    TrimStoreByEntryLimit(store, MAX_CHARACTER_ENTRIES)
 end
 
 local function GetGuildMemberData(name)
@@ -644,7 +1071,67 @@ local function GetGuildMemberData(name)
         return nil
     end
 
-    return GetGuildMemberStore()[normalized]
+    local store = GetGuildMemberStore()
+    local entry = store[normalized]
+    if entry then
+        return entry
+    end
+
+    local shortName = normalized:match("^([^-]+)")
+    if shortName and shortName ~= normalized then
+        local legacyEntry = store[shortName]
+        if type(legacyEntry) == "table" then
+            store[normalized] = legacyEntry
+            store[shortName] = nil
+            legacyEntry.name = normalized
+            return legacyEntry
+        end
+    end
+
+    return nil
+end
+
+local function InvitePlayerByName(name)
+    local normalized = GetNormalizedPlayerName(name)
+    if type(normalized) ~= "string" or normalized == "" then
+        return false
+    end
+
+    if C_PartyInfo and C_PartyInfo.InviteUnit then
+        local ok = pcall(C_PartyInfo.InviteUnit, normalized)
+        if ok then
+            return true
+        end
+    end
+
+    if InviteUnit then
+        local ok = pcall(InviteUnit, normalized)
+        if ok then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function RemoveRecentEntryByName(name)
+    local normalized = GetNormalizedPlayerName(name)
+    if type(normalized) ~= "string" or normalized == "" then
+        return 0
+    end
+
+    local store = GetGuildMemberStore()
+    local hidden = 0
+    for key, entry in pairs(store) do
+        local normalizedKey = GetNormalizedPlayerName(key) or key
+        local normalizedEntryName = type(entry) == "table" and GetNormalizedPlayerName(entry.name) or nil
+        if (normalizedKey == normalized or normalizedEntryName == normalized) and type(entry) == "table" then
+            entry.hiddenInRecents = true
+            hidden = hidden + 1
+        end
+    end
+
+    return hidden
 end
 
 local function GetPlayerClassFile(unitToken)
@@ -686,7 +1173,7 @@ local function ApplyClassIcon(texture, classFile)
     texture:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
     local coords = CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[classFile or ""]
     if coords then
-        texture:SetTexCoord(unpack(coords))
+        texture:SetTexCoord((unpack or table.unpack)(coords))
     else
         texture:SetTexCoord(0, 1, 0, 1)
     end
@@ -729,12 +1216,12 @@ local function FindKeystoneBagSlot()
         return nil, nil, nil
     end
 
-    for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
+    for _, bagID in ipairs((_G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_BAG_SLOTS) or { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }) do
         local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
         for slotIndex = 1, slotCount do
             local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
             local bagLink = C_Container.GetContainerItemLink and C_Container.GetContainerItemLink(bagID, slotIndex) or nil
-            if KEYSTONE_ITEM_IDS[itemID] or IsKeystoneLink(bagLink) then
+            if (((_G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS) or { [180653] = true, [158923] = true, [151086] = true })[itemID]) or IsKeystoneLink(bagLink) then
                 return bagID, slotIndex, bagLink
             end
         end
@@ -814,7 +1301,7 @@ end
 
 local function ShowMismatchToast(ownedMapID, receptacleMapID)
     local now = GetTime()
-    if (now - lastMismatchToastAt) < MISMATCH_TOAST_COOLDOWN_SECONDS then
+    if (now - lastMismatchToastAt) < ((_G.KeyMasterNS and _G.KeyMasterNS.MISMATCH_TOAST_COOLDOWN_SECONDS) or 2) then
         return
     end
 
@@ -994,103 +1481,7 @@ local function BuildActiveSyncChannels()
     return channels
 end
 
-local function BuildOwnGuildSyncMessage()
-    local mapID, keyLevel = GetOwnedKeystoneSnapshot()
-    local score = GetMythicPlusScore() or 0
-    local classFile = GetPlayerClassFile("player")
-
-    return table.concat({
-        KSM_GUILD_SYNC_VERSION,
-        classFile,
-        tostring(mapID or 0),
-        tostring(keyLevel or 0),
-        tostring(floor(score + 0.5)),
-    }, "\t")
-end
-
-local function BroadcastOwnGuildSnapshot()
-    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then
-        return
-    end
-
-    local channels = BuildActiveSyncChannels()
-    if #channels == 0 then
-        return
-    end
-
-    local payload = BuildOwnGuildSyncMessage()
-    for _, channel in ipairs(channels) do
-        pcall(C_ChatInfo.SendAddonMessage, KSM_ADDON_PREFIX, payload, channel)
-    end
-
-    SaveGuildMemberData(UnitName("player"), {
-        class = GetPlayerClassFile("player"),
-        mapID = GetOwnedKeystoneMapID() or 0,
-        keyLevel = GetOwnedKeystoneLevel() or 0,
-        rating = floor((GetMythicPlusScore() or 0) + 0.5),
-        source = "keymaster",
-    })
-end
-
-local SyncModule = _G.KeyMasterNS and _G.KeyMasterNS.Sync
-
-local function BuildSyncContext()
-    return {
-        KSM_ADDON_PREFIX = KSM_ADDON_PREFIX,
-        KSM_GUILD_SYNC_VERSION = KSM_GUILD_SYNC_VERSION,
-        KSM_GUILD_SYNC_REQUEST = KSM_GUILD_SYNC_REQUEST,
-        ASTRAL_KEYS_PREFIX = ASTRAL_KEYS_PREFIX,
-        DETAILS_OPENRAID_PREFIX = DETAILS_OPENRAID_PREFIX,
-        DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX = DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX,
-        DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX,
-        CLASS_ID_TO_FILE = CLASS_ID_TO_FILE,
-        IsPlayerInGuildSafe = KMNS.IsPlayerInGuildSafe,
-        GetNormalizedPlayerName = GetNormalizedPlayerName,
-        BroadcastOwnGuildSnapshot = BroadcastOwnGuildSnapshot,
-        SaveGuildMemberData = SaveGuildMemberData,
-        RefreshKSMWindowIfVisible = RefreshKSMWindowIfVisible,
-    }
-end
-
-local function RequestGuildSnapshots()
-    if SyncModule and SyncModule.RequestGuildSnapshots then
-        SyncModule.RequestGuildSnapshots(BuildSyncContext())
-    end
-end
-
-local function RequestGuildKeysFromAllSources(force, includeExternal)
-    if SyncModule and SyncModule.RequestGuildKeysFromAllSources then
-        return SyncModule.RequestGuildKeysFromAllSources(BuildSyncContext(), force, includeExternal)
-    end
-    return false
-end
-
-local function HandleAddonMessage(prefix, message, channel, sender)
-    if SyncModule and SyncModule.HandleAddonMessage then
-        SyncModule.HandleAddonMessage(BuildSyncContext(), prefix, message, channel, sender)
-    end
-end
-
-local RunStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
-local BuildRunStateContext
-
-local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
-    if RunStateModule and RunStateModule.ScheduleOwnedKeystoneObservation then
-        RunStateModule.ScheduleOwnedKeystoneObservation(BuildRunStateContext(), allowAnnounce, delaySeconds)
-    else
-        if not (C_Timer and C_Timer.After) then
-            ObserveOwnedKeystone(allowAnnounce)
-            return
-        end
-
-        local delay = type(delaySeconds) == "number" and max(0, delaySeconds) or 0
-        C_Timer.After(delay, function()
-            ObserveOwnedKeystone(allowAnnounce)
-        end)
-    end
-end
-
-local function GetMythicPlusScore()
+local function ResolveCurrentPlayerMythicPlusScore()
     if C_ChallengeMode and C_ChallengeMode.GetOverallDungeonScore then
         local score = C_ChallengeMode.GetOverallDungeonScore()
         if type(score) == "number" and score >= 0 then
@@ -1109,6 +1500,165 @@ local function GetMythicPlusScore()
     end
 
     return nil
+end
+
+local function BuildOwnGuildSyncMessage()
+    local mapID, keyLevel = GetOwnedKeystoneSnapshot()
+    local score = ResolveCurrentPlayerMythicPlusScore() or 0
+    local classFile = GetPlayerClassFile("player")
+
+    return table.concat({
+        KSM_GUILD_SYNC_VERSION,
+        classFile,
+        tostring(mapID or 0),
+        tostring(keyLevel or 0),
+        tostring(floor(score + 0.5)),
+    }, "\t")
+end
+
+local function PersistOwnGuildSnapshot()
+    local shortName = UnitName and UnitName("player")
+    if type(shortName) ~= "string" or shortName == "" then
+        return false
+    end
+
+    local fullName = shortName
+    if UnitFullName then
+        local unitName, unitRealm = UnitFullName("player")
+        if type(unitName) == "string" and unitName ~= "" then
+            fullName = NormalizePlayerDisplayName(unitName, unitRealm)
+        end
+    end
+
+    local canonicalFullName = GetNormalizedPlayerName(fullName) or fullName
+    local canonicalShortName = GetNormalizedPlayerName(shortName) or shortName
+
+    local ownStore = GetOwnCharacterStore()
+    local previousOwn = ownStore[canonicalFullName]
+    if type(previousOwn) ~= "table" then
+        previousOwn = ownStore[canonicalShortName]
+    end
+
+    local snapshot = {
+        class = GetPlayerClassFile("player"),
+        mapID = GetOwnedKeystoneMapID() or 0,
+        keyLevel = GetOwnedKeystoneLevel() or 0,
+        rating = floor((ResolveCurrentPlayerMythicPlusScore() or 0) + 0.5),
+        source = "keystonemastery",
+    }
+
+    -- Keep last known key/rating when the API is temporarily empty during login/logout transitions.
+    if (tonumber(snapshot.mapID) or 0) <= 0 and type(previousOwn) == "table" and (tonumber(previousOwn.mapID) or 0) > 0 then
+        snapshot.mapID = tonumber(previousOwn.mapID) or snapshot.mapID
+    end
+    if (tonumber(snapshot.keyLevel) or 0) <= 0 and type(previousOwn) == "table" and (tonumber(previousOwn.keyLevel) or 0) > 0 then
+        snapshot.keyLevel = tonumber(previousOwn.keyLevel) or snapshot.keyLevel
+    end
+    if (tonumber(snapshot.rating) or 0) <= 0 and type(previousOwn) == "table" and (tonumber(previousOwn.rating) or 0) > 0 then
+        snapshot.rating = tonumber(previousOwn.rating) or snapshot.rating
+    end
+
+    SaveGuildMemberData(canonicalFullName, snapshot)
+    SaveOwnCharacterData(canonicalFullName, snapshot)
+
+    return true
+end
+
+local function QueueOwnSnapshotPersistRetry(delaySeconds)
+    if type(delaySeconds) ~= "number" or delaySeconds <= 0 then
+        PersistOwnGuildSnapshot()
+        return
+    end
+
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(delaySeconds, function()
+            PersistOwnGuildSnapshot()
+        end)
+    else
+        PersistOwnGuildSnapshot()
+    end
+end
+
+local function BroadcastOwnGuildSnapshot()
+    PersistOwnGuildSnapshot()
+
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+        return
+    end
+
+    local channels = BuildActiveSyncChannels()
+    if #channels == 0 then
+        return
+    end
+
+    local payload = BuildOwnGuildSyncMessage()
+    for _, channel in ipairs(channels) do
+        pcall(C_ChatInfo.SendAddonMessage, KSM_ADDON_PREFIX, payload, channel)
+    end
+end
+
+local function BuildSyncContext()
+    return {
+        KSM_ADDON_PREFIX = KSM_ADDON_PREFIX,
+        KSM_GUILD_SYNC_VERSION = KSM_GUILD_SYNC_VERSION,
+        KSM_GUILD_SYNC_REQUEST = KSM_GUILD_SYNC_REQUEST,
+        ASTRAL_KEYS_PREFIX = ASTRAL_KEYS_PREFIX,
+        DETAILS_OPENRAID_PREFIX = DETAILS_OPENRAID_PREFIX,
+        DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX = DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX,
+        DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX,
+        CLASS_ID_TO_FILE = CLASS_ID_TO_FILE,
+        IsPlayerInGuildSafe = KMNS.IsPlayerInGuildSafe,
+        GetNormalizedPlayerName = GetNormalizedPlayerName,
+        PrintLocal = PrintLocal,
+        BroadcastOwnGuildSnapshot = BroadcastOwnGuildSnapshot,
+        SaveGuildMemberData = SaveGuildMemberData,
+        RefreshKSMWindowIfVisible = RefreshKSMWindowIfVisible,
+    }
+end
+
+local function RequestGuildSnapshots()
+    local syncModule = _G.KeyMasterNS and _G.KeyMasterNS.Sync
+    if syncModule and syncModule.RequestGuildSnapshots then
+        syncModule.RequestGuildSnapshots(BuildSyncContext())
+    end
+end
+
+local function RequestGuildKeysFromAllSources(force, includeExternal)
+    local syncModule = _G.KeyMasterNS and _G.KeyMasterNS.Sync
+    if syncModule and syncModule.RequestGuildKeysFromAllSources then
+        return syncModule.RequestGuildKeysFromAllSources(BuildSyncContext(), force, includeExternal)
+    end
+    return false
+end
+
+local function HandleAddonMessage(prefix, message, channel, sender)
+    local syncModule = _G.KeyMasterNS and _G.KeyMasterNS.Sync
+    if syncModule and syncModule.HandleAddonMessage then
+        syncModule.HandleAddonMessage(BuildSyncContext(), prefix, message, channel, sender)
+    end
+end
+
+local BuildRunStateContext
+
+local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
+    local runStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
+    if runStateModule and runStateModule.ScheduleOwnedKeystoneObservation then
+        runStateModule.ScheduleOwnedKeystoneObservation(BuildRunStateContext(), allowAnnounce, delaySeconds)
+    else
+        if not (C_Timer and C_Timer.After) then
+            ObserveOwnedKeystone(allowAnnounce)
+            return
+        end
+
+        local delay = type(delaySeconds) == "number" and max(0, delaySeconds) or 0
+        C_Timer.After(delay, function()
+            ObserveOwnedKeystone(allowAnnounce)
+        end)
+    end
+end
+
+local function GetMythicPlusScore()
+    return ResolveCurrentPlayerMythicPlusScore()
 end
 
 local function BuildScoreReply()
@@ -1406,8 +1956,6 @@ local function RequestAbandonKeyVote()
     end
 end
 
-local ChatModule = _G.KeyMasterNS and _G.KeyMasterNS.Chat
-
 local function BuildChatContext()
     return {
         REPLY_PREFIX = REPLY_PREFIX,
@@ -1423,6 +1971,7 @@ local function BuildChatContext()
         BuildKeystoneReply = BuildKeystoneReply,
         BuildScoreReply = BuildScoreReply,
         BuildBestReply = BuildBestReply,
+        PrintLocal = PrintLocal,
         ParseKeystoneFromMessage = KMNS.ParseKeystoneFromMessage,
         SaveGuildMemberData = SaveGuildMemberData,
         ExtractRequestCommand = KMNS.ExtractRequestCommand,
@@ -1462,8 +2011,9 @@ BuildRunStateContext = function()
 end
 
 local function HandleChatMessage(event, message, sender)
-    if ChatModule and ChatModule.HandleChatMessage then
-        ChatModule.HandleChatMessage(BuildChatContext(), event, message, sender)
+    local chatModule = _G.KeyMasterNS and _G.KeyMasterNS.Chat
+    if chatModule and chatModule.HandleChatMessage then
+        chatModule.HandleChatMessage(BuildChatContext(), event, message, sender)
     end
 end
 
@@ -1893,21 +2443,24 @@ local function CalculateChestTimerLimits(maxTimeSeconds, affixIDs)
 end
 
 local function GetActiveRunState()
-    if RunStateModule and RunStateModule.GetActiveRunState then
-        return RunStateModule.GetActiveRunState(BuildRunStateContext())
+    local runStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
+    if runStateModule and runStateModule.GetActiveRunState then
+        return runStateModule.GetActiveRunState(BuildRunStateContext())
     end
     return nil
 end
 
 local function CaptureCompletedRunState()
-    if RunStateModule and RunStateModule.CaptureCompletedRunState then
-        RunStateModule.CaptureCompletedRunState(BuildRunStateContext())
+    local runStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
+    if runStateModule and runStateModule.CaptureCompletedRunState then
+        runStateModule.CaptureCompletedRunState(BuildRunStateContext())
     end
 end
 
 local function RefreshCompletedRunTimingFromAPI()
-    if RunStateModule and RunStateModule.RefreshCompletedRunTimingFromAPI then
-        RunStateModule.RefreshCompletedRunTimingFromAPI(BuildRunStateContext())
+    local runStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
+    if runStateModule and runStateModule.RefreshCompletedRunTimingFromAPI then
+        runStateModule.RefreshCompletedRunTimingFromAPI(BuildRunStateContext())
     end
 end
 
@@ -2553,7 +3106,7 @@ local function CreateMythicUI()
 
     mythicFrame:SetScript("OnUpdate", function(_, elapsed)
         ui.lastRefreshAt = ui.lastRefreshAt + elapsed
-        if ui.lastRefreshAt < UI_REFRESH_INTERVAL_SECONDS then
+        if ui.lastRefreshAt < ((_G.KeyMasterNS and _G.KeyMasterNS.UI_REFRESH_INTERVAL_SECONDS) or 0.2) then
             return
         end
 
@@ -2564,23 +3117,23 @@ local function CreateMythicUI()
     ApplyMythicFrameSettings()
 end
 
-local function RefreshMythicUI()
+RefreshMythicUI = function()
     if not ui.frame then
         CreateMythicUI()
     end
 
-    ui.lastRefreshAt = UI_REFRESH_INTERVAL_SECONDS
+    ui.lastRefreshAt = ((_G.KeyMasterNS and _G.KeyMasterNS.UI_REFRESH_INTERVAL_SECONDS) or 0.2)
     RenderMythicUI()
 end
 
 local function TryAutoSlotKeystone()
     if not (C_ChallengeMode and C_ChallengeMode.SlotKeystone) then return end
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID and C_Container.PickupContainerItem) then return end
-    for _, bagID in ipairs(KEYSTONE_BAG_SLOTS) do
+    for _, bagID in ipairs((_G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_BAG_SLOTS) or { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }) do
         local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
         for slotIndex = 1, slotCount do
             local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
-            if KEYSTONE_ITEM_IDS[itemID] then
+            if (((_G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS) or { [180653] = true, [158923] = true, [151086] = true })[itemID]) then
                 C_Container.PickupContainerItem(bagID, slotIndex)
                 if CursorHasItem() then
                     C_ChallengeMode.SlotKeystone()
@@ -2745,15 +3298,40 @@ local function ConfigurePortalActionButton(button, spellID)
     end
 
     if hasSpell then
-        local secureSpell = spellID
-        button:SetAttribute("type", "spell")
-        button:SetAttribute("spell", secureSpell)
-        button:SetAttribute("type1", "spell")
-        button:SetAttribute("spell1", secureSpell)
+        -- Always resolve the spell name for macrotext
+        local spellName = nil
+        if type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function" then
+            local ok, name = pcall(C_Spell.GetSpellName, spellID)
+            if ok and type(name) == "string" and name ~= "" then
+                spellName = name
+            end
+        end
+        if not spellName and GetSpellInfo then
+            local name = GetSpellInfo(spellID)
+            if type(name) == "string" and name ~= "" then
+                spellName = name
+            end
+        end
+        if not spellName then
+            spellName = tostring(spellID)
+        end
+
+        local macrotext = string.format("/cast %s", spellName)
+        button:SetAttribute("type", "macro")
+        button:SetAttribute("macrotext", macrotext)
+        button:SetAttribute("type1", "macro")
+        button:SetAttribute("macrotext1", macrotext)
+
+        -- Remove spell attributes to avoid secure confusion
+        button:SetAttribute("spell", nil)
+        button:SetAttribute("spell1", nil)
+
     else
         button:SetAttribute("type", nil)
-        button:SetAttribute("spell", nil)
+        button:SetAttribute("macrotext", nil)
         button:SetAttribute("type1", nil)
+        button:SetAttribute("macrotext1", nil)
+        button:SetAttribute("spell", nil)
         button:SetAttribute("spell1", nil)
     end
 
@@ -3190,7 +3768,9 @@ local function TrySetGreatVaultTexture(texture)
     local unlockedSlots, totalSlots = GetVaultUnlockCounts()
     local hasAnyUnlockedSlot = type(unlockedSlots) == "number" and unlockedSlots > 0
     local _ = totalSlots
-    texture:SetTexture(hasAnyUnlockedSlot and KSM_VAULT_TEXTURE_GLOWY or KSM_VAULT_TEXTURE_EMPTY)
+    texture:SetTexture(hasAnyUnlockedSlot
+        and ((_G.KeyMasterNS and _G.KeyMasterNS.KSM_VAULT_TEXTURE_GLOWY) or "Interface\\AddOns\\KeyMaster\\Assets\\UI\\Vault_Glowy.png")
+        or ((_G.KeyMasterNS and _G.KeyMasterNS.KSM_VAULT_TEXTURE_EMPTY) or "Interface\\AddOns\\KeyMaster\\Assets\\UI\\Vault.png"))
     texture:SetTexCoord(0, 1, 0, 1)
     texture:SetBlendMode("BLEND")
     return true
@@ -3287,6 +3867,12 @@ local function EnsureKSMGuildRow(index)
     nameText:SetJustifyH("LEFT")
     row.nameText = nameText
 
+    local nameButton = CreateFrame("Button", nil, row)
+    nameButton:SetPoint("LEFT", classIcon, "RIGHT", 4, 0)
+    nameButton:SetSize(170, 22)
+    nameButton:RegisterForClicks("AnyUp")
+    row.nameButton = nameButton
+
     local keyText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     keyText:SetPoint("LEFT", row, "LEFT", 198, 0)
     keyText:SetWidth(34)
@@ -3308,7 +3894,7 @@ local function EnsureKSMGuildRow(index)
     local teleportButton = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     teleportButton:SetSize(78, 18)
     teleportButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-    teleportButton:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+    teleportButton:RegisterForClicks("AnyUp", "AnyDown")
 
     local bg = teleportButton:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(teleportButton)
@@ -3323,17 +3909,6 @@ local function EnsureKSMGuildRow(index)
     label:SetAllPoints(teleportButton)
     label:SetText("Teleport")
     teleportButton.label = label
-
-    teleportButton:SetScript("OnClick", function(self)
-        if not self.spellID then
-            return
-        end
-
-        if not IsPortalSpellKnown(self.spellID) then
-            PrintLocal("You do not know this portal")
-            return
-        end
-    end)
 
     teleportButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -3371,6 +3946,12 @@ local function EnsureKSMRecentRow(index)
     nameText:SetJustifyH("LEFT")
     row.nameText = nameText
 
+    local nameButton = CreateFrame("Button", nil, row)
+    nameButton:SetPoint("LEFT", classIcon, "RIGHT", 4, 0)
+    nameButton:SetSize(170, 22)
+    nameButton:RegisterForClicks("AnyUp")
+    row.nameButton = nameButton
+
     local keyText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     keyText:SetPoint("LEFT", row, "LEFT", 198, 0)
     keyText:SetWidth(34)
@@ -3392,7 +3973,7 @@ local function EnsureKSMRecentRow(index)
     local teleportButton = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     teleportButton:SetSize(78, 18)
     teleportButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-    teleportButton:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+    teleportButton:RegisterForClicks("AnyUp", "AnyDown")
 
     local bg = teleportButton:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(teleportButton)
@@ -3408,17 +3989,6 @@ local function EnsureKSMRecentRow(index)
     label:SetText("Teleport")
     teleportButton.label = label
 
-    teleportButton:SetScript("OnClick", function(self)
-        if not self.spellID then
-            return
-        end
-
-        if not IsPortalSpellKnown(self.spellID) then
-            PrintLocal("You do not know this portal")
-            return
-        end
-    end)
-
     teleportButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if self.spellID then
@@ -3432,6 +4002,79 @@ local function EnsureKSMRecentRow(index)
     row.teleportButton = teleportButton
 
     ui.ksmRecentsRows[index] = row
+    return row
+end
+
+local function EnsureKSMWarbandRow(index)
+    if ui.ksmWarbandRows[index] then
+        return ui.ksmWarbandRows[index]
+    end
+
+    local row = CreateFrame("Frame", nil, ui.ksmWarbandContent)
+    row:SetSize(570, 24)
+
+    local classIcon = row:CreateTexture(nil, "ARTWORK")
+    classIcon:SetSize(16, 16)
+    classIcon:SetPoint("LEFT", row, "LEFT", 4, 0)
+    classIcon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+    row.classIcon = classIcon
+
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameText:SetPoint("LEFT", classIcon, "RIGHT", 8, 0)
+    nameText:SetWidth(165)
+    nameText:SetJustifyH("LEFT")
+    row.nameText = nameText
+
+    local keyText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    keyText:SetPoint("LEFT", row, "LEFT", 198, 0)
+    keyText:SetWidth(34)
+    keyText:SetJustifyH("LEFT")
+    row.keyText = keyText
+
+    local dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    dungeonText:SetPoint("LEFT", row, "LEFT", 240, 0)
+    dungeonText:SetWidth(180)
+    dungeonText:SetJustifyH("LEFT")
+    row.dungeonText = dungeonText
+
+    local ratingText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    ratingText:SetPoint("LEFT", row, "LEFT", 430, 0)
+    ratingText:SetWidth(54)
+    ratingText:SetJustifyH("LEFT")
+    row.ratingText = ratingText
+
+    local teleportButton = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
+    teleportButton:SetSize(78, 18)
+    teleportButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    teleportButton:RegisterForClicks("AnyUp", "AnyDown")
+
+    local bg = teleportButton:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(teleportButton)
+    bg:SetColorTexture(0.05, 0.05, 0.05, 0.85)
+
+    local accent = teleportButton:CreateTexture(nil, "OVERLAY")
+    accent:SetPoint("TOPLEFT", teleportButton, "TOPLEFT", 0, 0)
+    accent:SetPoint("BOTTOMRIGHT", teleportButton, "BOTTOMRIGHT", 0, 0)
+    accent:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.18)
+
+    local label = teleportButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetAllPoints(teleportButton)
+    label:SetText("Teleport")
+    teleportButton.label = label
+
+    teleportButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.spellID then
+            GameTooltip:SetSpellByID(self.spellID)
+        else
+            GameTooltip:AddLine("Portal unavailable", 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    teleportButton:SetScript("OnLeave", GameTooltip_Hide)
+    row.teleportButton = teleportButton
+
+    ui.ksmWarbandRows[index] = row
     return row
 end
 
@@ -3482,7 +4125,7 @@ local function EnsureKSMPartyRow(index)
     local keyTile = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
     keyTile:SetSize(46, 46)
     keyTile:SetPoint("TOPLEFT", row, "TOPLEFT", 336, -8)
-    keyTile:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+    keyTile:RegisterForClicks("AnyUp", "AnyDown")
 
     local tileBG = keyTile:CreateTexture(nil, "BACKGROUND")
     tileBG:SetAllPoints(keyTile)
@@ -3507,17 +4150,6 @@ local function EnsureKSMPartyRow(index)
     dungeonText:SetTextColor(0.88, 0.9, 0.93, 1)
     row.dungeonText = dungeonText
 
-    keyTile:SetScript("OnClick", function(self)
-        if not self.spellID then
-            return
-        end
-
-        if not IsPortalSpellKnown(self.spellID) then
-            PrintLocal("You do not know this portal")
-            return
-        end
-    end)
-
     keyTile:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:ClearLines()
@@ -3539,15 +4171,13 @@ local function EnsureKSMPartyRow(index)
     return row
 end
 
-local KSMModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
-
 local function BuildKSMContext()
     return {
         ui = ui,
         floor = floor,
         min = min,
         max = max,
-        KSM_GUILD_RECENT_DAYS = KSM_GUILD_RECENT_DAYS,
+        KSM_GUILD_RECENT_DAYS = (_G.KeyMasterNS and _G.KeyMasterNS.KSM_GUILD_RECENT_DAYS) or 7,
         GetMythicPlusScore = GetMythicPlusScore,
         GetBestRunsFromHistory = GetBestRunsFromHistory,
         GetBestRunFromMapLookup = GetBestRunFromMapLookup,
@@ -3583,38 +4213,54 @@ local function BuildKSMContext()
         TryGetMythicScoreForIdentifier = TryGetMythicScoreForIdentifier,
         IsGuildMemberRecent = KMNS.IsGuildMemberRecent,
         GetGuildMemberStore = GetGuildMemberStore,
+        GetOwnCharacterStore = GetOwnCharacterStore,
+        InvitePlayerByName = InvitePlayerByName,
+        RemoveRecentEntryByName = RemoveRecentEntryByName,
         EnsureKSMGuildRow = EnsureKSMGuildRow,
         EnsureKSMRecentRow = EnsureKSMRecentRow,
+        EnsureKSMWarbandRow = EnsureKSMWarbandRow,
     }
 end
 
 local function SetKSMActiveTab(tabName)
-    if KSMModule and KSMModule.SetActiveTab then
-        KSMModule.SetActiveTab(BuildKSMContext(), tabName)
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if ksmModule and ksmModule.SetActiveTab then
+        ksmModule.SetActiveTab(BuildKSMContext(), tabName)
     end
 end
 
 local function RefreshKSMMainTab()
-    if KSMModule and KSMModule.RefreshMainTab then
-        KSMModule.RefreshMainTab(BuildKSMContext())
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if ksmModule and ksmModule.RefreshMainTab then
+        ksmModule.RefreshMainTab(BuildKSMContext())
     end
 end
 
 local function RefreshKSMPartyTab()
-    if KSMModule and KSMModule.RefreshPartyTab then
-        KSMModule.RefreshPartyTab(BuildKSMContext())
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if ksmModule and ksmModule.RefreshPartyTab then
+        ksmModule.RefreshPartyTab(BuildKSMContext())
     end
 end
 
 local function RefreshKSMGuildTab()
-    if KSMModule and KSMModule.RefreshGuildTab then
-        KSMModule.RefreshGuildTab(BuildKSMContext())
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if ksmModule and ksmModule.RefreshGuildTab then
+        ksmModule.RefreshGuildTab(BuildKSMContext())
     end
 end
 
 local function RefreshKSMRecentsTab()
-    if KSMModule and KSMModule.RefreshRecentsTab then
-        KSMModule.RefreshRecentsTab(BuildKSMContext())
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if ksmModule and ksmModule.RefreshRecentsTab then
+        ksmModule.RefreshRecentsTab(BuildKSMContext())
+    end
+end
+
+local function RefreshKSMWarbandTab()
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if ksmModule and ksmModule.RefreshWarbandTab then
+        ksmModule.RefreshWarbandTab(BuildKSMContext())
     end
 end
 
@@ -3627,6 +4273,7 @@ function RefreshKSMWindow()
     RefreshKSMPartyTab()
     RefreshKSMGuildTab()
     RefreshKSMRecentsTab()
+    RefreshKSMWarbandTab()
 end
 
 function RefreshKSMWindowIfVisible()
@@ -3683,10 +4330,10 @@ function CreateKSMWindow()
     local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
 
-    local tabWidth = 108
+    local tabWidth = 102
     local tabHeight = 22
     local tabGap = 8
-    local totalTabsWidth = (tabWidth * 4) + (tabGap * 3)
+    local totalTabsWidth = (tabWidth * 5) + (tabGap * 4)
     local tabsStartX = floor(((frame:GetWidth() or 600) - totalTabsWidth) / 2 + 0.5)
 
     local function CreateTabButton(text, xOffset)
@@ -3762,6 +4409,7 @@ function CreateKSMWindow()
     local partyTab = CreateTabButton("Party", tabsStartX + tabWidth + tabGap)
     local guildTab = CreateTabButton("Guild", tabsStartX + (tabWidth + tabGap) * 2)
     local recentsTab = CreateTabButton("Recents", tabsStartX + (tabWidth + tabGap) * 3)
+    local warbandTab = CreateTabButton("Warband", tabsStartX + (tabWidth + tabGap) * 4)
 
     local mainContent = CreateFrame("Frame", nil, frame)
     mainContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
@@ -3779,15 +4427,21 @@ function CreateKSMWindow()
     recentsContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
     recentsContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
 
+    local warbandContent = CreateFrame("Frame", nil, frame)
+    warbandContent:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -37)
+    warbandContent:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
+
     ui.ksmFrame = frame
     ui.ksmMainTab = mainTab
     ui.ksmPartyTab = partyTab
     ui.ksmGuildTab = guildTab
     ui.ksmRecentsTab = recentsTab
+    ui.ksmWarbandTab = warbandTab
     ui.ksmMainContent = mainContent
     ui.ksmPartyContent = partyContent
     ui.ksmGuildContent = guildContent
     ui.ksmRecentsContent = recentsContent
+    ui.ksmWarbandContent = warbandContent
 
     local weeklyPanel = CreateFrame("Frame", nil, mainContent, BackdropTemplateMixin and "BackdropTemplate")
     weeklyPanel:SetSize(570, 280)
@@ -3914,6 +4568,23 @@ function CreateKSMWindow()
     CreateRecentsHeader("Dungeon", 250, 180)
     CreateRecentsHeader("Rating", 440, 54)
     CreateRecentsHeader("Portal", 502, 60)
+
+    local function CreateWarbandHeader(text, x, width)
+        local header = warbandContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        header:SetPoint("TOPLEFT", warbandContent, "TOPLEFT", x, -11)
+        header:SetWidth(width)
+        header:SetJustifyH("LEFT")
+        header:SetTextColor(1, 1, 1, 0.95)
+        header:SetText(text)
+        return header
+    end
+
+    CreateWarbandHeader("Class", 10, 44)
+    CreateWarbandHeader("Player Name", 34, 165)
+    CreateWarbandHeader("Key", 208, 34)
+    CreateWarbandHeader("Dungeon", 250, 180)
+    CreateWarbandHeader("Rating", 440, 54)
+    CreateWarbandHeader("Portal", 502, 60)
 
     local requestGuildButton = CreateFrame("Button", nil, guildContent)
     requestGuildButton:SetSize(148, 20)
@@ -4088,6 +4759,66 @@ function CreateKSMWindow()
     ui.ksmRecentsNextButton = recentsNextPageButton
     ui.ksmRecentsPageText = recentsPageText
 
+    local warbandRefreshButton = CreateFrame("Button", nil, warbandContent)
+    warbandRefreshButton:SetSize(156, 20)
+    warbandRefreshButton:SetPoint("BOTTOM", warbandContent, "BOTTOM", 0, 8)
+
+    local warbandRefreshButtonBg = warbandRefreshButton:CreateTexture(nil, "BACKGROUND")
+    warbandRefreshButtonBg:SetAllPoints(warbandRefreshButton)
+    warbandRefreshButtonBg:SetColorTexture(0.06, 0.06, 0.06, 0.88)
+
+    local warbandRefreshButtonBorder = warbandRefreshButton:CreateTexture(nil, "BORDER")
+    warbandRefreshButtonBorder:SetPoint("TOPLEFT", warbandRefreshButton, "TOPLEFT", 0, 0)
+    warbandRefreshButtonBorder:SetPoint("BOTTOMRIGHT", warbandRefreshButton, "BOTTOMRIGHT", 0, 0)
+    warbandRefreshButtonBorder:SetColorTexture(1, 1, 1, 0.18)
+
+    local warbandRefreshButtonAccent = warbandRefreshButton:CreateTexture(nil, "OVERLAY")
+    warbandRefreshButtonAccent:SetPoint("TOPLEFT", warbandRefreshButton, "TOPLEFT", 0, 0)
+    warbandRefreshButtonAccent:SetPoint("TOPRIGHT", warbandRefreshButton, "TOPRIGHT", 0, 0)
+    warbandRefreshButtonAccent:SetHeight(2)
+    warbandRefreshButtonAccent:SetColorTexture(0.24, 0.64, 1, 0.85)
+
+    local warbandRefreshButtonText = warbandRefreshButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    warbandRefreshButtonText:SetAllPoints(warbandRefreshButton)
+    warbandRefreshButtonText:SetText("Refresh Warband")
+    warbandRefreshButtonText:SetTextColor(0.9, 0.95, 1, 1)
+
+    warbandRefreshButton:SetScript("OnEnter", function()
+        warbandRefreshButtonBg:SetColorTexture(0.1, 0.1, 0.1, 0.95)
+    end)
+    warbandRefreshButton:SetScript("OnLeave", function()
+        warbandRefreshButtonBg:SetColorTexture(0.06, 0.06, 0.06, 0.88)
+    end)
+    warbandRefreshButton:SetScript("OnClick", function()
+        RefreshKSMWindowIfVisible()
+    end)
+
+    local warbandPrevPageButton = CreateGuildPagerButton("<", -122)
+    warbandPrevPageButton:ClearAllPoints()
+    warbandPrevPageButton:SetPoint("BOTTOM", warbandContent, "BOTTOM", -122, 8)
+    warbandPrevPageButton:SetScript("OnClick", function()
+        ui.ksmWarbandPage = max(1, (ui.ksmWarbandPage or 1) - 1)
+        RefreshKSMWindowIfVisible()
+    end)
+
+    local warbandNextPageButton = CreateGuildPagerButton(">", 122)
+    warbandNextPageButton:ClearAllPoints()
+    warbandNextPageButton:SetPoint("BOTTOM", warbandContent, "BOTTOM", 122, 8)
+    warbandNextPageButton:SetScript("OnClick", function()
+        ui.ksmWarbandPage = (ui.ksmWarbandPage or 1) + 1
+        RefreshKSMWindowIfVisible()
+    end)
+
+    local warbandPageText = warbandContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    warbandPageText:SetPoint("BOTTOM", warbandContent, "BOTTOM", 0, 32)
+    warbandPageText:SetTextColor(0.82, 0.88, 0.95, 1)
+    warbandPageText:SetText("Page 1/1")
+
+    ui.ksmWarbandRefreshButton = warbandRefreshButton
+    ui.ksmWarbandPrevButton = warbandPrevPageButton
+    ui.ksmWarbandNextButton = warbandNextPageButton
+    ui.ksmWarbandPageText = warbandPageText
+
     mainTab:SetScript("OnClick", function()
         SetKSMActiveTab("main")
         RefreshKSMWindow()
@@ -4102,6 +4833,10 @@ function CreateKSMWindow()
     end)
     recentsTab:SetScript("OnClick", function()
         SetKSMActiveTab("recents")
+        RefreshKSMWindow()
+    end)
+    warbandTab:SetScript("OnClick", function()
+        SetKSMActiveTab("warband")
         RefreshKSMWindow()
     end)
 
@@ -4140,7 +4875,7 @@ SlashCmdList.KEYSTONEMASTER = function(message)
         return
     end
 
-    if command == "main" or command == "party" or command == "guild" or command == "recents" then
+    if command == "main" or command == "party" or command == "guild" or command == "recents" or command == "warband" then
         ui.ksmFrame:Show()
         SetKSMActiveTab(command)
         RefreshKSMWindow()
@@ -4152,7 +4887,7 @@ SlashCmdList.KEYSTONEMASTER = function(message)
         return
     end
 
-    PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, recents, refresh")
+    PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, recents, warband, refresh")
 end
 
 SLASH_KEYMASTER1 = "/keymaster"
@@ -4298,6 +5033,8 @@ function PerformLoginInitialization()
     end
     ObserveOwnedKeystone(false)
     BroadcastOwnGuildSnapshot()
+    QueueOwnSnapshotPersistRetry(2)
+    QueueOwnSnapshotPersistRetry(8)
     RequestGuildKeysFromAllSources(true, true)
     RefreshMythicUI()
 end
@@ -4318,7 +5055,24 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
+        RegisterRuntimeEvents()
         PerformLoginInitialization()
+        return
+    end
+
+    if event == "PLAYER_REGEN_ENABLED" and runtimeRegistrationDeferred and not runtimeEventsRegistered then
+        RegisterRuntimeEvents()
+    end
+
+    if event == "PLAYER_ENTERING_WORLD" then
+        PersistOwnGuildSnapshot()
+        QueueOwnSnapshotPersistRetry(2)
+        QueueOwnSnapshotPersistRetry(8)
+        return
+    end
+
+    if event == "PLAYER_LOGOUT" then
+        PersistOwnGuildSnapshot()
         return
     end
 
@@ -4339,23 +5093,25 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
-    if RunStateModule and RunStateModule.HandleChallengeLifecycleEvent
-        and RunStateModule.HandleChallengeLifecycleEvent(BuildRunStateContext(), event) then
+    local runStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
+
+    if runStateModule and runStateModule.HandleChallengeLifecycleEvent
+        and runStateModule.HandleChallengeLifecycleEvent(BuildRunStateContext(), event) then
         return
     end
 
-    if RunStateModule and RunStateModule.HandleCombatLogEvent
-        and RunStateModule.HandleCombatLogEvent(BuildRunStateContext(), event) then
+    if runStateModule and runStateModule.HandleCombatLogEvent
+        and runStateModule.HandleCombatLogEvent(BuildRunStateContext(), event) then
         return
     end
 
-    if RunStateModule and RunStateModule.HandleGroupStateEvent
-        and RunStateModule.HandleGroupStateEvent(BuildRunStateContext(), event) then
+    if runStateModule and runStateModule.HandleGroupStateEvent
+        and runStateModule.HandleGroupStateEvent(BuildRunStateContext(), event) then
         return
     end
 
-    if RunStateModule and RunStateModule.HandleRunRefreshEvent
-        and RunStateModule.HandleRunRefreshEvent(BuildRunStateContext(), event) then
+    if runStateModule and runStateModule.HandleRunRefreshEvent
+        and runStateModule.HandleRunRefreshEvent(BuildRunStateContext(), event) then
         return
     end
 

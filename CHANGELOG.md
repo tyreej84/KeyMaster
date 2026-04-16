@@ -54,6 +54,10 @@ All notable changes to this project will be documented in this file.
 - Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
 - Expanded KeyMaster sync request/broadcast channels to include active group contexts (`PARTY`/`RAID`/`INSTANCE_CHAT`) in addition to guild, improving raid pickup coverage.
 - Updated `/ksm guild` roster filtering to list only guild members with known keys, reducing noise from inactive/alts-without-key entries.
+- Ensured `/ksm guild` always includes the current player row when your own known key exists, even if roster normalization misses your name.
+- Excluded the current player from `/ksm recents` so your own key only appears in Guild/Main views.
+- Fixed `/ksm` portal secure-button binding to use spell-name tokens (matching working `/cast` behavior) instead of numeric IDs for improved click-cast reliability.
+- Removed custom `OnClick` handlers from secure portal action buttons so protected spell actions can execute on hardware clicks in Main/Party/Guild.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip` with a top-level `KeyMaster/` folder for direct AddOns extraction.

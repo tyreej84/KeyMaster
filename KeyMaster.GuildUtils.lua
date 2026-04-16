@@ -35,7 +35,8 @@ end
 
 function ns.GetNumGuildMembersSafe()
     if GetNumGuildMembers then
-        return tonumber(GetNumGuildMembers()) or 0
+        local totalMembers = select(1, GetNumGuildMembers())
+        return tonumber(totalMembers) or 0
     end
 
     if C_GuildInfo and C_GuildInfo.GetNumGuildMembers then

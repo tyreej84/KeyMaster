@@ -7,6 +7,14 @@ end
 local KSM = {}
 ns.KSM = KSM
 
+local function GetShortDisplayName(name)
+    if type(name) ~= "string" or name == "" then
+        return "Unknown"
+    end
+
+    return name:match("^([^-]+)") or name
+end
+
 local function ResolveBestKnownScore(tryScoreFn, ...)
     if type(tryScoreFn) ~= "function" then
         return nil
@@ -25,6 +33,21 @@ local function ResolveBestKnownScore(tryScoreFn, ...)
     return nil
 end
 
+local ksmNameContextMenu = CreateFrame("Frame", "KeyMasterKSMNameContextMenu", UIParent, "UIDropDownMenuTemplate")
+
+local function ShowNameContextMenu(menuItems)
+    if type(menuItems) ~= "table" or #menuItems == 0 then
+        return false
+    end
+
+    if type(EasyMenu) == "function" then
+        local ok = pcall(EasyMenu, menuItems, ksmNameContextMenu, "cursor", 0, 0, "MENU")
+        return ok == true
+    end
+
+    return false
+end
+
 function KSM.SetActiveTab(ctx, tabName)
     local ui = ctx.ui
     if not ui or not ui.ksmFrame then
@@ -37,11 +60,13 @@ function KSM.SetActiveTab(ctx, tabName)
     local showParty = ui.ksmActiveTab == "party"
     local showGuild = ui.ksmActiveTab == "guild"
     local showRecents = ui.ksmActiveTab == "recents"
+    local showWarband = ui.ksmActiveTab == "warband"
 
     if ui.ksmMainContent then if showMain then ui.ksmMainContent:Show() else ui.ksmMainContent:Hide() end end
     if ui.ksmPartyContent then if showParty then ui.ksmPartyContent:Show() else ui.ksmPartyContent:Hide() end end
     if ui.ksmGuildContent then if showGuild then ui.ksmGuildContent:Show() else ui.ksmGuildContent:Hide() end end
     if ui.ksmRecentsContent then if showRecents then ui.ksmRecentsContent:Show() else ui.ksmRecentsContent:Hide() end end
+    if ui.ksmWarbandContent then if showWarband then ui.ksmWarbandContent:Show() else ui.ksmWarbandContent:Hide() end end
 
     if ui.ksmMainTab then
         ui.ksmMainTab.isSelected = showMain
@@ -93,6 +118,19 @@ function KSM.SetActiveTab(ctx, tabName)
         local recentsLabel = ui.ksmRecentsTab.label or (ui.ksmRecentsTab.GetFontString and ui.ksmRecentsTab:GetFontString())
         if recentsLabel then
             recentsLabel:SetTextColor(showRecents and 1 or 0.8, showRecents and 0.9 or 0.83, showRecents and 0.68 or 0.86, 1)
+        end
+    end
+    if ui.ksmWarbandTab then
+        ui.ksmWarbandTab.isSelected = showWarband
+        if ui.ksmWarbandTab.bg then
+            ui.ksmWarbandTab.bg:SetColorTexture(showWarband and 0.09 or 0.04, showWarband and 0.09 or 0.04, showWarband and 0.11 or 0.05, showWarband and 0.96 or 0.85)
+        end
+        if ui.ksmWarbandTab.activeAccent then
+            ui.ksmWarbandTab.activeAccent:SetColorTexture(0.24, 0.64, 1, showWarband and 0.95 or 0)
+        end
+        local warbandLabel = ui.ksmWarbandTab.label or (ui.ksmWarbandTab.GetFontString and ui.ksmWarbandTab:GetFontString())
+        if warbandLabel then
+            warbandLabel:SetTextColor(showWarband and 1 or 0.8, showWarband and 0.9 or 0.83, showWarband and 0.68 or 0.86, 1)
         end
     end
 end
@@ -415,7 +453,7 @@ function KSM.RefreshMainTab(ctx)
         if not button then
             button = CreateFrame("Button", nil, seasonPanel, "SecureActionButtonTemplate")
             button:SetSize(tileWidth, tileHeight)
-            button:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+            button:RegisterForClicks("AnyUp", "AnyDown")
 
             local icon = button:CreateTexture(nil, "ARTWORK")
             icon:SetAllPoints(button)
@@ -430,18 +468,6 @@ function KSM.RefreshMainTab(ctx)
             levelText:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -3)
             levelText:SetTextColor(1.0, 0.72, 0.2, 1)
             button.levelText = levelText
-
-            button:SetScript("OnClick", function(self)
-                if not self.spellID then
-                    PrintLocal("Portal spell is not configured for this dungeon")
-                    return
-                end
-
-                if not (IsPortalSpellKnown and IsPortalSpellKnown(self.spellID)) then
-                    PrintLocal("Portal is locked for this dungeon")
-                    return
-                end
-            end)
 
             button:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -523,14 +549,22 @@ function KSM.RefreshPartyTab(ctx)
     local units = { "player", "party1", "party2", "party3", "party4" }
     for _, unitToken in ipairs(units) do
         if UnitExists(unitToken) then
-            local name = UnitName(unitToken) or "Unknown"
+            local name, realm = UnitName(unitToken)
+            name = name or "Unknown"
+            local fullName = name
+            if type(realm) == "string" and realm ~= "" then
+                fullName = string.format("%s-%s", name, realm)
+            end
             local mapID, keyLevel
             local classFile = GetPlayerClassFile(unitToken)
 
             if unitToken == "player" then
                 mapID, keyLevel = GetOwnedKeystoneSnapshot()
             else
-                local cache = GetGuildMemberData(name)
+                local cache = GetGuildMemberData(fullName)
+                if not cache then
+                    cache = GetGuildMemberData(name)
+                end
                 mapID = cache and tonumber(cache.mapID) or 0
                 keyLevel = cache and tonumber(cache.keyLevel) or 0
                 if cache and cache.class then
@@ -540,10 +574,13 @@ function KSM.RefreshPartyTab(ctx)
 
             local score = TryGetUnitMythicScore(unitToken)
             if (not score or score <= 0) and unitToken ~= "player" then
-                local cache = GetGuildMemberData(name)
+                local cache = GetGuildMemberData(fullName)
+                if not cache then
+                    cache = GetGuildMemberData(name)
+                end
                 score = cache and tonumber(cache.rating) or nil
                 if not score or score <= 0 then
-                    score = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, name)
+                    score = ResolveBestKnownScore(TryGetMythicScoreForIdentifier, fullName, name)
                 end
             end
 
@@ -585,7 +622,7 @@ function KSM.RefreshPartyTab(ctx)
 
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", ui.ksmPartyContent, "TOPLEFT", 10, y)
-        row.nameText:SetText(entry.name)
+        row.nameText:SetText(GetShortDisplayName(entry.name))
         row.nameText:SetTextColor(r, g, b, 1)
 
         if SetPortraitTexture and UnitExists(entry.unitToken) then
@@ -646,6 +683,7 @@ function KSM.RefreshGuildTab(ctx)
     local RequestGuildRosterSafe = ctx.RequestGuildRosterSafe
     local RequestGuildKeysFromAllSources = ctx.RequestGuildKeysFromAllSources
     local GetNormalizedPlayerName = ctx.GetNormalizedPlayerName
+    local GetOwnCharacterStore = ctx.GetOwnCharacterStore
     local GetMythicPlusScore = ctx.GetMythicPlusScore
     local GetOwnedKeystoneSnapshot = ctx.GetOwnedKeystoneSnapshot
     local GetPlayerClassFile = ctx.GetPlayerClassFile
@@ -659,6 +697,7 @@ function KSM.RefreshGuildTab(ctx)
     local FormatDungeonLabel = ctx.FormatDungeonLabel
     local IsPortalSpellKnown = ctx.IsPortalSpellKnown
     local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
+    local InvitePlayerByName = ctx.InvitePlayerByName
 
     local function IsGuildOnlineValue(value)
         if value == true then
@@ -702,9 +741,78 @@ function KSM.RefreshGuildTab(ctx)
     local entries = {}
     local entryByName = {}
     local rosterByName = {}
+
+    local function BuildNameAliases(rawName)
+        local aliases = {}
+        local seen = {}
+
+        local function AddAlias(value)
+            if type(value) == "string" and value ~= "" and not seen[value] then
+                seen[value] = true
+                table.insert(aliases, value)
+            end
+        end
+
+        AddAlias(rawName)
+        AddAlias(GetNormalizedPlayerName(rawName))
+
+        return aliases
+    end
+
+    local function NamesReferToSameCharacter(leftName, rightName)
+        if type(leftName) ~= "string" or leftName == "" or type(rightName) ~= "string" or rightName == "" then
+            return false
+        end
+
+        local leftAliases = {}
+        for _, alias in ipairs(BuildNameAliases(leftName)) do
+            leftAliases[alias] = true
+        end
+
+        for _, alias in ipairs(BuildNameAliases(rightName)) do
+            if leftAliases[alias] then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local function HasEntryByAnyAlias(name)
+        for _, alias in ipairs(BuildNameAliases(name)) do
+            if entryByName[alias] then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function FindRosterEntryByAnyAlias(name)
+        for _, alias in ipairs(BuildNameAliases(name)) do
+            local rosterEntry = rosterByName[alias]
+            if rosterEntry then
+                return rosterEntry
+            end
+        end
+        return nil
+    end
+
+    local function MarkEntryAliases(name)
+        for _, alias in ipairs(BuildNameAliases(name)) do
+            entryByName[alias] = true
+        end
+    end
+
     local playerName = GetNormalizedPlayerName(UnitName("player"))
     local playerScore = floor((GetMythicPlusScore() or 0) + 0.5)
     local playerMapID, playerKeyLevel = GetOwnedKeystoneSnapshot()
+    local playerCache = playerName and GetGuildMemberData(playerName) or nil
+    if (tonumber(playerMapID) or 0) <= 0 then
+        playerMapID = playerCache and tonumber(playerCache.mapID) or playerMapID
+    end
+    if (tonumber(playerKeyLevel) or 0) <= 0 then
+        playerKeyLevel = playerCache and tonumber(playerCache.keyLevel) or playerKeyLevel
+    end
     local playerClass = GetPlayerClassFile("player")
 
     local total = GetNumGuildMembersSafe()
@@ -718,13 +826,19 @@ function KSM.RefreshGuildTab(ctx)
             if name then
                 local onlineNow = IsGuildOnlineValue(online)
                 local cache = GetGuildMemberData(name) or {}
-                local isPlayer = name == playerName
+                local isPlayer = NamesReferToSameCharacter(name, playerName)
                 local guid = select(17, GetGuildRosterInfo(index))
-                rosterByName[name] = {
+                local rosterEntry = {
                     online = onlineNow,
                     classFile = classFile,
                     guid = guid,
                 }
+                for _, alias in ipairs(BuildNameAliases(name)) do
+                    rosterByName[alias] = rosterEntry
+                end
+                for _, alias in ipairs(BuildNameAliases(fullName)) do
+                    rosterByName[alias] = rosterEntry
+                end
 
                 local mapID = isPlayer and playerMapID or cache.mapID
                 local keyLevel = isPlayer and playerKeyLevel or cache.keyLevel
@@ -740,10 +854,9 @@ function KSM.RefreshGuildTab(ctx)
                 local normalizedMapID = tonumber(mapID) or 0
                 local normalizedKeyLevel = tonumber(keyLevel) or 0
                 local normalizedRating = tonumber(rating) or 0
-                local isRecent = IsGuildMemberRecent(index, onlineNow, cache)
                 local hasKnownKey = normalizedMapID > 0 and normalizedKeyLevel > 0
 
-                if hasKnownKey and (isPlayer or isRecent) then
+                if hasKnownKey then
                     local rowEntry = {
                         name = name or fullName,
                         class = isPlayer and playerClass or cache.class or classFile,
@@ -752,12 +865,58 @@ function KSM.RefreshGuildTab(ctx)
                         rating = normalizedRating,
                         spellID = GetPortalSpellIDForMap(normalizedMapID),
                         online = isPlayer or onlineNow,
+                        isOwnedCharacter = isPlayer,
                     }
                     table.insert(entries, rowEntry)
-                    entryByName[rowEntry.name] = true
+                    MarkEntryAliases(rowEntry.name)
                 end
             end
         end
+    end
+
+    local ownStore = type(GetOwnCharacterStore) == "function" and GetOwnCharacterStore() or nil
+    if type(ownStore) == "table" then
+        for ownName, ownCache in pairs(ownStore) do
+            if type(ownName) == "string" and type(ownCache) == "table" then
+                local normalizedOwnName = GetNormalizedPlayerName(ownName) or ownName
+                if normalizedOwnName and normalizedOwnName ~= "" and not HasEntryByAnyAlias(normalizedOwnName) then
+                    local ownedMapID = tonumber(ownCache.mapID) or 0
+                    local ownedKeyLevel = tonumber(ownCache.keyLevel) or 0
+                    if ownedMapID > 0 and ownedKeyLevel > 0 then
+                        local ownedRating = tonumber(ownCache.rating) or 0
+                        local rosterEntry = FindRosterEntryByAnyAlias(normalizedOwnName)
+                        local isOwnedPlayer = NamesReferToSameCharacter(normalizedOwnName, playerName)
+                        table.insert(entries, {
+                            name = normalizedOwnName,
+                            class = isOwnedPlayer and playerClass or ownCache.class or (rosterEntry and rosterEntry.classFile),
+                            mapID = ownedMapID,
+                            keyLevel = ownedKeyLevel,
+                            rating = ownedRating,
+                            spellID = GetPortalSpellIDForMap(ownedMapID),
+                            online = isOwnedPlayer or (rosterEntry and rosterEntry.online) or false,
+                            isOwnedCharacter = true,
+                        })
+                        MarkEntryAliases(normalizedOwnName)
+                    end
+                end
+            end
+        end
+    end
+
+    if playerName and not HasEntryByAnyAlias(playerName) then
+        local fallbackMapID = tonumber(playerMapID) or 0
+        local fallbackKeyLevel = tonumber(playerKeyLevel) or 0
+        table.insert(entries, {
+            name = playerName,
+            class = playerClass,
+            mapID = fallbackMapID,
+            keyLevel = fallbackKeyLevel,
+            rating = tonumber(playerScore) or 0,
+            spellID = GetPortalSpellIDForMap(fallbackMapID),
+            online = true,
+            isOwnedCharacter = true,
+        })
+        MarkEntryAliases(playerName)
     end
 
     table.sort(entries, function(left, right)
@@ -785,7 +944,7 @@ function KSM.RefreshGuildTab(ctx)
     if ui.ksmHideOffline then
         local visibleEntries = {}
         for _, entry in ipairs(entries) do
-            if entry.online then
+            if entry.online or entry.isOwnedCharacter then
                 table.insert(visibleEntries, entry)
             end
         end
@@ -853,8 +1012,42 @@ function KSM.RefreshGuildTab(ctx)
         row:SetPoint("TOPLEFT", ui.ksmGuildContent, "TOPLEFT", 10, y)
         ApplyClassIcon(row.classIcon, entry.class)
         row.classIcon:Show()
-        row.nameText:SetText(entry.online and (entry.name or "Unknown") or string.format("%s (offline)", entry.name or "Unknown"))
+        local displayName = GetShortDisplayName(entry.name)
+        row.nameText:SetText(entry.online and displayName or string.format("%s (offline)", displayName))
         row.nameText:SetTextColor(r, g, b, entry.online and 1 or 0.65)
+        if row.nameButton then
+            row.nameButton:SetScript("OnEnter", function(self)
+                if not self.inviteName then
+                    return
+                end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(GetShortDisplayName(self.inviteName), 1, 1, 1)
+                GameTooltip:AddLine("Right-click to invite", 0.75, 0.85, 1)
+                GameTooltip:Show()
+            end)
+            row.nameButton:SetScript("OnLeave", GameTooltip_Hide)
+            row.nameButton:SetScript("OnClick", function(self, button)
+                if button ~= "RightButton" or not self.inviteName or type(InvitePlayerByName) ~= "function" then
+                    return
+                end
+
+                local inviteName = self.inviteName
+                local shown = ShowNameContextMenu({
+                    {
+                        text = "Invite",
+                        notCheckable = true,
+                        func = function()
+                            InvitePlayerByName(inviteName)
+                        end,
+                    },
+                })
+                if not shown then
+                    InvitePlayerByName(inviteName)
+                end
+            end)
+            row.nameButton.inviteName = entry.name
+            row.nameButton:Show()
+        end
         row.keyText:SetText(entry.keyLevel > 0 and string.format("+%d", entry.keyLevel) or "-")
         row.dungeonText:SetText(entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key")
         row.keyText:SetTextColor(1, 0.82, 0.2, entry.online and 1 or 0.65)
@@ -910,33 +1103,72 @@ function KSM.RefreshRecentsTab(ctx)
     local IsPortalSpellKnown = ctx.IsPortalSpellKnown
     local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
     local TryGetMythicScoreForIdentifier = ctx.TryGetMythicScoreForIdentifier
+    local GetNormalizedPlayerName = ctx.GetNormalizedPlayerName
+    local InvitePlayerByName = ctx.InvitePlayerByName
+    local RemoveRecentEntryByName = ctx.RemoveRecentEntryByName
 
-    local entries = {}
+    local dedupedEntries = {}
+    local playerName = GetNormalizedPlayerName(UnitName("player"))
     local store = GetGuildMemberStore()
+
+    local function ShouldUseCandidate(existing, candidate)
+        if type(existing) ~= "table" then
+            return true
+        end
+
+        local existingUpdated = tonumber(existing.updatedAt) or 0
+        local candidateUpdated = tonumber(candidate.updatedAt) or 0
+        if candidateUpdated ~= existingUpdated then
+            return candidateUpdated > existingUpdated
+        end
+
+        local existingKey = tonumber(existing.keyLevel) or 0
+        local candidateKey = tonumber(candidate.keyLevel) or 0
+        if candidateKey ~= existingKey then
+            return candidateKey > existingKey
+        end
+
+        local existingRating = tonumber(existing.rating) or 0
+        local candidateRating = tonumber(candidate.rating) or 0
+        return candidateRating > existingRating
+    end
+
     for cachedName, cache in pairs(store) do
         if type(cachedName) == "string" and type(cache) == "table" then
-            local mapID = tonumber(cache.mapID) or 0
-            local keyLevel = tonumber(cache.keyLevel) or 0
-            if mapID > 0 and keyLevel > 0 then
-                local rating = tonumber(cache.rating) or 0
-                if rating <= 0 and type(TryGetMythicScoreForIdentifier) == "function" then
-                    local apiScore = TryGetMythicScoreForIdentifier(cachedName)
-                    if type(apiScore) == "number" and apiScore > 0 then
-                        rating = floor(apiScore + 0.5)
+            local normalizedName = GetNormalizedPlayerName(cachedName) or cachedName
+            if normalizedName ~= playerName and cache.hiddenInRecents ~= true then
+                local mapID = tonumber(cache.mapID) or 0
+                local keyLevel = tonumber(cache.keyLevel) or 0
+                if mapID > 0 and keyLevel > 0 then
+                    local rating = tonumber(cache.rating) or 0
+                    if rating <= 0 and type(TryGetMythicScoreForIdentifier) == "function" then
+                        local apiScore = TryGetMythicScoreForIdentifier(normalizedName)
+                        if type(apiScore) == "number" and apiScore > 0 then
+                            rating = floor(apiScore + 0.5)
+                        end
+                    end
+
+                    local candidate = {
+                        name = normalizedName,
+                        class = cache.class,
+                        mapID = mapID,
+                        keyLevel = keyLevel,
+                        rating = rating,
+                        spellID = GetPortalSpellIDForMap(mapID),
+                        updatedAt = tonumber(cache.updatedAt) or 0,
+                    }
+
+                    if ShouldUseCandidate(dedupedEntries[normalizedName], candidate) then
+                        dedupedEntries[normalizedName] = candidate
                     end
                 end
-
-                table.insert(entries, {
-                    name = cachedName,
-                    class = cache.class,
-                    mapID = mapID,
-                    keyLevel = keyLevel,
-                    rating = rating,
-                    spellID = GetPortalSpellIDForMap(mapID),
-                    updatedAt = tonumber(cache.updatedAt) or 0,
-                })
             end
         end
+    end
+
+    local entries = {}
+    for _, entry in pairs(dedupedEntries) do
+        table.insert(entries, entry)
     end
 
     table.sort(entries, function(left, right)
@@ -1016,8 +1248,64 @@ function KSM.RefreshRecentsTab(ctx)
         row:SetPoint("TOPLEFT", ui.ksmRecentsContent, "TOPLEFT", 10, y)
         ApplyClassIcon(row.classIcon, entry.class)
         row.classIcon:Show()
-        row.nameText:SetText(entry.name or "Unknown")
+        row.nameText:SetText(GetShortDisplayName(entry.name))
         row.nameText:SetTextColor(r, g, b, 1)
+        if row.nameButton then
+            row.nameButton:SetScript("OnEnter", function(self)
+                if not self.playerName then
+                    return
+                end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(GetShortDisplayName(self.playerName), 1, 1, 1)
+                GameTooltip:AddLine("Right-click to invite", 0.75, 0.85, 1)
+                GameTooltip:AddLine("Shift+Right-click to remove", 0.75, 0.85, 1)
+                GameTooltip:Show()
+            end)
+            row.nameButton:SetScript("OnLeave", GameTooltip_Hide)
+            row.nameButton:SetScript("OnClick", function(self, button)
+                if button ~= "RightButton" or not self.playerName then
+                    return
+                end
+
+                local playerName = self.playerName
+                local shown = ShowNameContextMenu({
+                    {
+                        text = "Invite",
+                        notCheckable = true,
+                        disabled = type(InvitePlayerByName) ~= "function",
+                        func = function()
+                            if type(InvitePlayerByName) == "function" then
+                                InvitePlayerByName(playerName)
+                            end
+                        end,
+                    },
+                    {
+                        text = "Remove",
+                        notCheckable = true,
+                        disabled = type(RemoveRecentEntryByName) ~= "function",
+                        func = function()
+                            if type(RemoveRecentEntryByName) == "function" then
+                                RemoveRecentEntryByName(playerName)
+                                KSM.RefreshRecentsTab(ctx)
+                                KSM.RefreshGuildTab(ctx)
+                            end
+                        end,
+                    },
+                })
+
+                if not shown then
+                    if IsShiftKeyDown and IsShiftKeyDown() and type(RemoveRecentEntryByName) == "function" then
+                        RemoveRecentEntryByName(playerName)
+                        KSM.RefreshRecentsTab(ctx)
+                        KSM.RefreshGuildTab(ctx)
+                    elseif type(InvitePlayerByName) == "function" then
+                        InvitePlayerByName(playerName)
+                    end
+                end
+            end)
+            row.nameButton.playerName = entry.name
+            row.nameButton:Show()
+        end
         row.keyText:SetText(entry.keyLevel > 0 and string.format("+%d", entry.keyLevel) or "-")
         row.dungeonText:SetText(entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key")
         row.keyText:SetTextColor(1, 0.82, 0.2, 1)
@@ -1052,5 +1340,228 @@ function KSM.RefreshRecentsTab(ctx)
 
     for index = 1, #ui.ksmRecentsLines do
         ui.ksmRecentsLines[index]:Hide()
+    end
+end
+
+function KSM.RefreshWarbandTab(ctx)
+    local ui = ctx.ui
+    if not ui or not ui.ksmWarbandContent then
+        return
+    end
+
+    local floor = ctx.floor
+    local max = ctx.max
+    local min = ctx.min
+    local EnsureKSMWarbandRow = ctx.EnsureKSMWarbandRow
+    local GetOwnCharacterStore = ctx.GetOwnCharacterStore
+    local GetPortalSpellIDForMap = ctx.GetPortalSpellIDForMap
+    local GetClassColorInfo = ctx.GetClassColorInfo
+    local ApplyClassIcon = ctx.ApplyClassIcon
+    local FormatDungeonLabel = ctx.FormatDungeonLabel
+    local IsPortalSpellKnown = ctx.IsPortalSpellKnown
+    local ConfigurePortalActionButton = ctx.ConfigurePortalActionButton
+    local GetNormalizedPlayerName = ctx.GetNormalizedPlayerName
+
+    local dedupedEntries = {}
+    local playerName = GetNormalizedPlayerName(UnitName("player"))
+    local playerFullName = nil
+    if UnitFullName then
+        local unitName, unitRealm = UnitFullName("player")
+        if type(unitName) == "string" and unitName ~= "" then
+            playerFullName = (type(unitRealm) == "string" and unitRealm ~= "") and string.format("%s-%s", unitName, unitRealm) or unitName
+        end
+    end
+
+    local function IsCurrentCharacterName(name)
+        if type(name) ~= "string" or name == "" then
+            return false
+        end
+
+        if playerFullName and name == playerFullName then
+            return true
+        end
+
+        local normalizedName = GetNormalizedPlayerName(name) or name
+        return playerName and normalizedName == playerName
+    end
+
+    local store = type(GetOwnCharacterStore) == "function" and GetOwnCharacterStore() or nil
+
+    local function ShouldUseCandidate(existing, candidate)
+        if type(existing) ~= "table" then
+            return true
+        end
+
+        local existingUpdated = tonumber(existing.updatedAt) or 0
+        local candidateUpdated = tonumber(candidate.updatedAt) or 0
+        if candidateUpdated ~= existingUpdated then
+            return candidateUpdated > existingUpdated
+        end
+
+        local existingKey = tonumber(existing.keyLevel) or 0
+        local candidateKey = tonumber(candidate.keyLevel) or 0
+        if candidateKey ~= existingKey then
+            return candidateKey > existingKey
+        end
+
+        local existingRating = tonumber(existing.rating) or 0
+        local candidateRating = tonumber(candidate.rating) or 0
+        return candidateRating > existingRating
+    end
+
+    if type(store) == "table" then
+        for cachedName, cache in pairs(store) do
+            if type(cachedName) == "string" and type(cache) == "table" then
+                local normalizedName = GetNormalizedPlayerName(cachedName) or cachedName
+                local mapID = tonumber(cache.mapID) or 0
+                local keyLevel = tonumber(cache.keyLevel) or 0
+                if normalizedName and normalizedName ~= "" and mapID > 0 and keyLevel > 0 then
+                    local candidate = {
+                        name = normalizedName,
+                        class = cache.class,
+                        mapID = mapID,
+                        keyLevel = keyLevel,
+                        rating = tonumber(cache.rating) or 0,
+                        spellID = GetPortalSpellIDForMap(mapID),
+                        updatedAt = tonumber(cache.updatedAt) or 0,
+                        isCurrent = IsCurrentCharacterName(normalizedName),
+                    }
+
+                    local existing = dedupedEntries[normalizedName]
+                    if ShouldUseCandidate(existing, candidate) then
+                        dedupedEntries[normalizedName] = candidate
+                    elseif existing and candidate.isCurrent then
+                        existing.isCurrent = true
+                    end
+                end
+            end
+        end
+    end
+
+    local entries = {}
+    for _, entry in pairs(dedupedEntries) do
+        table.insert(entries, entry)
+    end
+
+    table.sort(entries, function(left, right)
+        local leftCurrent = left.isCurrent and 1 or 0
+        local rightCurrent = right.isCurrent and 1 or 0
+        if leftCurrent ~= rightCurrent then
+            return leftCurrent > rightCurrent
+        end
+
+        local leftUpdated = tonumber(left.updatedAt) or 0
+        local rightUpdated = tonumber(right.updatedAt) or 0
+        if leftUpdated ~= rightUpdated then
+            return leftUpdated > rightUpdated
+        end
+
+        local leftLevel = tonumber(left.keyLevel) or 0
+        local rightLevel = tonumber(right.keyLevel) or 0
+        if leftLevel ~= rightLevel then
+            return leftLevel > rightLevel
+        end
+
+        return (left.name or "") < (right.name or "")
+    end)
+
+    ui.ksmWarbandTotalPages = max(1, math.ceil(#entries / 15))
+    ui.ksmWarbandPage = min(max(ui.ksmWarbandPage or 1, 1), ui.ksmWarbandTotalPages)
+
+    if ui.ksmWarbandPageText then
+        ui.ksmWarbandPageText:SetText(string.format("Page %d/%d", ui.ksmWarbandPage, ui.ksmWarbandTotalPages))
+    end
+    if ui.ksmWarbandPrevButton then
+        if ui.ksmWarbandPage > 1 then
+            ui.ksmWarbandPrevButton:Enable()
+            ui.ksmWarbandPrevButton:SetAlpha(1)
+        else
+            ui.ksmWarbandPrevButton:Disable()
+            ui.ksmWarbandPrevButton:SetAlpha(0.45)
+        end
+    end
+    if ui.ksmWarbandNextButton then
+        if ui.ksmWarbandPage < ui.ksmWarbandTotalPages then
+            ui.ksmWarbandNextButton:Enable()
+            ui.ksmWarbandNextButton:SetAlpha(1)
+        else
+            ui.ksmWarbandNextButton:Disable()
+            ui.ksmWarbandNextButton:SetAlpha(0.45)
+        end
+    end
+
+    if #entries == 0 then
+        local row = EnsureKSMWarbandRow(1)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", ui.ksmWarbandContent, "TOPLEFT", 10, -52)
+        row.classIcon:Hide()
+        row.nameText:SetText("No warband characters with known keys yet")
+        row.nameText:SetTextColor(1, 1, 1, 1)
+        row.keyText:SetText("")
+        row.dungeonText:SetText("Run a key on an alt to add it")
+        row.ratingText:SetText("")
+        row.teleportButton:Hide()
+        row:Show()
+        for index = 2, #ui.ksmWarbandRows do
+            ui.ksmWarbandRows[index]:Hide()
+        end
+        for index = 1, #ui.ksmWarbandLines do
+            ui.ksmWarbandLines[index]:Hide()
+        end
+        return
+    end
+
+    local pageStart = ((ui.ksmWarbandPage - 1) * 15) + 1
+    local pageEnd = min(pageStart + 15 - 1, #entries)
+
+    local y = -56
+    local renderedCount = 0
+    for index = pageStart, pageEnd do
+        local entry = entries[index]
+        renderedCount = renderedCount + 1
+        local row = EnsureKSMWarbandRow(renderedCount)
+        local r, g, b = GetClassColorInfo(entry.class)
+
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", ui.ksmWarbandContent, "TOPLEFT", 10, y)
+        ApplyClassIcon(row.classIcon, entry.class)
+        row.classIcon:Show()
+        local warbandDisplayName = GetShortDisplayName(entry.name)
+        row.nameText:SetText(entry.isCurrent and string.format("%s (current)", warbandDisplayName) or warbandDisplayName)
+        row.nameText:SetTextColor(r, g, b, 1)
+        row.keyText:SetText(entry.keyLevel > 0 and string.format("+%d", entry.keyLevel) or "-")
+        row.dungeonText:SetText(entry.mapID > 0 and FormatDungeonLabel(entry.mapID) or "No key")
+        row.keyText:SetTextColor(1, 0.82, 0.2, 1)
+        row.dungeonText:SetTextColor(0.95, 0.95, 0.95, 1)
+        row.ratingText:SetText(entry.rating > 0 and tostring(entry.rating) or "-")
+        row.ratingText:SetTextColor(0.95, 0.95, 0.95, 1)
+
+        if entry.spellID then
+            row.teleportButton.spellID = entry.spellID
+            local known = ConfigurePortalActionButton and ConfigurePortalActionButton(row.teleportButton, entry.spellID)
+            row.teleportButton:Show()
+            row.teleportButton.label:SetText("Teleport")
+            if known == nil then
+                known = IsPortalSpellKnown and IsPortalSpellKnown(entry.spellID)
+            end
+            row.teleportButton.label:SetTextColor(known and 1 or 0.55, known and 1 or 0.55, known and 1 or 0.55, 1)
+        else
+            row.teleportButton.spellID = nil
+            if ConfigurePortalActionButton then
+                ConfigurePortalActionButton(row.teleportButton, nil)
+            end
+            row.teleportButton:Hide()
+        end
+
+        row:Show()
+        y = y - 24
+    end
+
+    for index = renderedCount + 1, #ui.ksmWarbandRows do
+        ui.ksmWarbandRows[index]:Hide()
+    end
+
+    for index = 1, #ui.ksmWarbandLines do
+        ui.ksmWarbandLines[index]:Hide()
     end
 end

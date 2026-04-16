@@ -7,6 +7,12 @@ end
 local RunState = {}
 ns.RunState = RunState
 
+local function RefreshMythicUIIfAvailable(ctx)
+    if type(ctx) == "table" and type(ctx.RefreshMythicUI) == "function" then
+        ctx.RefreshMythicUI()
+    end
+end
+
 local function GetUpgradeLevels(state)
     if not state or type(state.elapsedSeconds) ~= "number" or type(state.maxTimeSeconds) ~= "number" then
         return nil
@@ -178,7 +184,7 @@ function RunState.RefreshCompletedRunTimingFromAPI(ctx)
         ctx.ui.completedRun.timeLeftSeconds = ctx.ui.completedRun.maxTimeSeconds - elapsedSeconds
     end
 
-    ctx.RefreshMythicUI()
+    RefreshMythicUIIfAvailable(ctx)
 end
 
 function RunState.HandleChallengeLifecycleEvent(ctx, event)
@@ -190,7 +196,7 @@ function RunState.HandleChallengeLifecycleEvent(ctx, event)
         ctx.ResetEnemyForcesCalibration()
         ctx.ObserveOwnedKeystone(false)
         ctx.SyncGroupDeathLogFromUnits()
-        ctx.RefreshMythicUI()
+        RefreshMythicUIIfAvailable(ctx)
         return true
     end
 
@@ -204,7 +210,7 @@ function RunState.HandleChallengeLifecycleEvent(ctx, event)
                 RunState.RefreshCompletedRunTimingFromAPI(ctx)
             end)
         end
-        ctx.RefreshMythicUI()
+        RefreshMythicUIIfAvailable(ctx)
         return true
     end
 
@@ -215,7 +221,7 @@ function RunState.HandleChallengeLifecycleEvent(ctx, event)
         ctx.ResetDeathLog()
         ctx.ResetEnemyForcesCalibration()
         RunState.ScheduleOwnedKeystoneObservation(ctx, true, 1)
-        ctx.RefreshMythicUI()
+        RefreshMythicUIIfAvailable(ctx)
         return true
     end
 
@@ -265,7 +271,7 @@ function RunState.HandleRunRefreshEvent(ctx, event)
     end
 
     ctx.SyncGroupDeathLogFromUnits()
-    ctx.RefreshMythicUI()
+    RefreshMythicUIIfAvailable(ctx)
     ctx.RefreshKSMWindowIfVisible()
     return true
 end

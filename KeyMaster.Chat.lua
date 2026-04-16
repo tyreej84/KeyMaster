@@ -28,11 +28,15 @@ function Chat.BuildReplyForCommand(ctx, command)
 end
 
 function Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, message, sender)
-    if type(message) ~= "string" or message == "" or type(sender) ~= "string" or sender == "" then
+    if type(message) ~= "string" or type(sender) ~= "string" then
         return
     end
 
-    local mapID, keyLevel = ctx.ParseKeystoneFromMessage(message)
+    local ok, mapID, keyLevel = pcall(ctx.ParseKeystoneFromMessage, message)
+    if not ok then
+        return
+    end
+
     if type(mapID) ~= "number" or mapID <= 0 or type(keyLevel) ~= "number" or keyLevel <= 0 then
         return
     end
@@ -85,7 +89,7 @@ function Chat.ExtractCommandWithFallback(ctx, message)
 end
 
 local function BuildFallbackReply(ctx, command)
-    local prefix = ctx.REPLY_PREFIX or "KeyStoneMastery:"
+    local prefix = ctx.REPLY_PREFIX or "KSM:"
     if command == ctx.KEY_TEXT_COMMAND or command == ctx.KEYS_TEXT_COMMAND then
         return string.format("%s Keystone unavailable", prefix)
     end

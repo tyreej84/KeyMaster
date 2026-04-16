@@ -87,7 +87,7 @@ local function ParseGuildSyncPayload(ctx, message)
             mapID = ClampNumber(mapIDText, 0, 20000, 0),
             keyLevel = ClampNumber(keyLevelText, 0, 50, 0),
             rating = ClampNumber(ratingText, 0, 20000, 0),
-            source = "keymaster",
+            source = "keystonemastery",
         }
     end
 
@@ -99,7 +99,29 @@ local function ParseGuildSyncPayload(ctx, message)
         return {
             mapID = parsedMapID,
             keyLevel = parsedKeyLevel,
-            source = "keymaster",
+            source = "keystonemastery",
+        }
+    end
+
+    local genericMapID, genericKeyLevel = message:match(":(%d+):(%d+):")
+    genericMapID = ClampNumber(genericMapID, 0, 20000, nil)
+    genericKeyLevel = ClampNumber(genericKeyLevel, 0, 50, nil)
+    if genericMapID and genericKeyLevel then
+        return {
+            mapID = genericMapID,
+            keyLevel = genericKeyLevel,
+            source = "keystonemastery",
+        }
+    end
+
+    local trailingMapID, trailingKeyLevel = message:match(":(%d+):(%d+)$")
+    trailingMapID = ClampNumber(trailingMapID, 0, 20000, nil)
+    trailingKeyLevel = ClampNumber(trailingKeyLevel, 0, 50, nil)
+    if trailingMapID and trailingKeyLevel then
+        return {
+            mapID = trailingMapID,
+            keyLevel = trailingKeyLevel,
+            source = "keystonemastery",
         }
     end
 

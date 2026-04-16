@@ -4,7 +4,7 @@ if type(ns) ~= "table" then
     _G.KeyMasterNS = ns
 end
 
-ns.REPLY_PREFIX = "KeyStoneMastery:"
+ns.REPLY_PREFIX = "KSM:"
 ns.KEYSTONE_ITEM_IDS = { [180653] = true, [158923] = true, [151086] = true }
 ns.KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
 ns.KSM_PORTAL_SPELL_IDS = {
@@ -102,7 +102,7 @@ ns.DEFAULT_DB = {
 -- Early fallback slash bindings: if later addon files error, users still get a KeyMaster response.
 local function KeyMasterEarlySlashFallback(command)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff98KeyStoneMastery:|r core did not fully initialize. Check Lua errors, then /reload.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff98KSM:|r core did not fully initialize. Check Lua errors, then /reload.")
     end
 end
 
