@@ -708,6 +708,15 @@ function KSM.RefreshGuildTab(ctx)
         return numeric == 1
     end
 
+    local function IsGuildStatusOnline(statusText)
+        if type(statusText) ~= "string" then
+            return false
+        end
+
+        local normalized = strtrim(statusText)
+        return normalized ~= ""
+    end
+
     if ui.ksmGuildHideOfflineCheck then
         ui.ksmGuildHideOfflineCheck:SetChecked(ui.ksmHideOffline == true)
     end
@@ -741,6 +750,8 @@ function KSM.RefreshGuildTab(ctx)
     local entries = {}
     local entryByName = {}
     local rosterByName = {}
+    local ownStore = type(GetOwnCharacterStore) == "function" and GetOwnCharacterStore() or nil
+    local ownByAlias = {}
 
     local function BuildNameAliases(rawName)
         local aliases = {}
@@ -803,6 +814,29 @@ function KSM.RefreshGuildTab(ctx)
         end
     end
 
+    local function FindOwnEntryByAnyAlias(name)
+        for _, alias in ipairs(BuildNameAliases(name)) do
+            local ownEntry = ownByAlias[alias]
+            if ownEntry then
+                return ownEntry
+            end
+        end
+        return nil
+    end
+
+    if type(ownStore) == "table" then
+        for ownName, ownCache in pairs(ownStore) do
+            if type(ownName) == "string" and type(ownCache) == "table" then
+                local normalizedOwnName = GetNormalizedPlayerName(ownName) or ownName
+                if normalizedOwnName and normalizedOwnName ~= "" then
+                    for _, alias in ipairs(BuildNameAliases(normalizedOwnName)) do
+                        ownByAlias[alias] = ownCache
+                    end
+                end
+            end
+        end
+    end
+
     local playerName = GetNormalizedPlayerName(UnitName("player"))
     local playerScore = floor((GetMythicPlusScore() or 0) + 0.5)
     local playerMapID, playerKeyLevel = GetOwnedKeystoneSnapshot()
@@ -817,7 +851,7 @@ function KSM.RefreshGuildTab(ctx)
 
     local total = GetNumGuildMembersSafe()
     for index = 1, total do
-        local fullName, _, _, _, _, _, _, _, _, online, _, classFile = GetGuildRosterInfo(index)
+        local fullName, _, _, _, _, _, _, _, online, statusText, classFile, _, _, isMobile, _, _, guid = GetGuildRosterInfo(index)
         if fullName then
             local name = GetNormalizedPlayerName(fullName)
             if not name or name == "" then
@@ -825,9 +859,18 @@ function KSM.RefreshGuildTab(ctx)
             end
             if name then
                 local onlineNow = IsGuildOnlineValue(online)
+                if not onlineNow and IsGuildOnlineValue(isMobile) then
+                    onlineNow = true
+                end
+                if not onlineNow and IsGuildStatusOnline(statusText) then
+                    onlineNow = true
+                end
                 local cache = GetGuildMemberData(name) or {}
+                local ownCache = FindOwnEntryByAnyAlias(name)
+                if type(ownCache) == "table" then
+                    cache = ownCache
+                end
                 local isPlayer = NamesReferToSameCharacter(name, playerName)
-                local guid = select(17, GetGuildRosterInfo(index))
                 local rosterEntry = {
                     online = onlineNow,
                     classFile = classFile,
@@ -874,7 +917,6 @@ function KSM.RefreshGuildTab(ctx)
         end
     end
 
-    local ownStore = type(GetOwnCharacterStore) == "function" and GetOwnCharacterStore() or nil
     if type(ownStore) == "table" then
         for ownName, ownCache in pairs(ownStore) do
             if type(ownName) == "string" and type(ownCache) == "table" then
@@ -886,17 +928,20 @@ function KSM.RefreshGuildTab(ctx)
                         local ownedRating = tonumber(ownCache.rating) or 0
                         local rosterEntry = FindRosterEntryByAnyAlias(normalizedOwnName)
                         local isOwnedPlayer = NamesReferToSameCharacter(normalizedOwnName, playerName)
-                        table.insert(entries, {
-                            name = normalizedOwnName,
-                            class = isOwnedPlayer and playerClass or ownCache.class or (rosterEntry and rosterEntry.classFile),
-                            mapID = ownedMapID,
-                            keyLevel = ownedKeyLevel,
-                            rating = ownedRating,
-                            spellID = GetPortalSpellIDForMap(ownedMapID),
-                            online = isOwnedPlayer or (rosterEntry and rosterEntry.online) or false,
-                            isOwnedCharacter = true,
-                        })
-                        MarkEntryAliases(normalizedOwnName)
+                        -- Guild tab should not synthesize non-roster rows from own-store alts.
+                        if rosterEntry or isOwnedPlayer then
+                            table.insert(entries, {
+                                name = normalizedOwnName,
+                                class = isOwnedPlayer and playerClass or ownCache.class or (rosterEntry and rosterEntry.classFile),
+                                mapID = ownedMapID,
+                                keyLevel = ownedKeyLevel,
+                                rating = ownedRating,
+                                spellID = GetPortalSpellIDForMap(ownedMapID),
+                                online = isOwnedPlayer or (rosterEntry and rosterEntry.online) or false,
+                                isOwnedCharacter = true,
+                            })
+                            MarkEntryAliases(normalizedOwnName)
+                        end
                     end
                 end
             end
@@ -918,6 +963,102 @@ function KSM.RefreshGuildTab(ctx)
         })
         MarkEntryAliases(playerName)
     end
+
+    local function SplitNameRealm(name)
+        if type(name) ~= "string" then
+            return nil, nil
+        end
+
+        local short, realm = name:match("^([^-]+)%-(.+)$")
+        if short and realm then
+            return short, realm
+        end
+
+        return name, nil
+    end
+
+    local function AreEquivalentGuildNames(leftName, rightName)
+        if NamesReferToSameCharacter(leftName, rightName) then
+            return true
+        end
+
+        local leftShort, leftRealm = SplitNameRealm(leftName)
+        local rightShort, rightRealm = SplitNameRealm(rightName)
+        if not leftShort or not rightShort then
+            return false
+        end
+
+        -- Collapse duplicate short/full forms for the same roster member (e.g. Chenyr + Chenyr-Stormrage).
+        if leftShort == rightShort and ((leftRealm and not rightRealm) or (rightRealm and not leftRealm)) then
+            return true
+        end
+
+        return false
+    end
+
+    local function ChoosePreferredGuildEntry(existing, candidate)
+        if type(existing) ~= "table" then
+            return candidate
+        end
+        if type(candidate) ~= "table" then
+            return existing
+        end
+
+        -- Prefer roster-style short name when it exists, otherwise keep richer metadata.
+        local existingShort, existingRealm = SplitNameRealm(existing.name)
+        local candidateShort, candidateRealm = SplitNameRealm(candidate.name)
+        if existingShort and candidateShort and existingShort == candidateShort then
+            if existingRealm and not candidateRealm then
+                return candidate
+            end
+            if candidateRealm and not existingRealm then
+                return existing
+            end
+        end
+
+        local existingGuid = type(existing.guid) == "string" and existing.guid ~= ""
+        local candidateGuid = type(candidate.guid) == "string" and candidate.guid ~= ""
+        if existingGuid ~= candidateGuid then
+            return candidateGuid and candidate or existing
+        end
+
+        local existingOnline = existing.online and 1 or 0
+        local candidateOnline = candidate.online and 1 or 0
+        if existingOnline ~= candidateOnline then
+            return candidateOnline > existingOnline and candidate or existing
+        end
+
+        local existingKey = tonumber(existing.keyLevel) or 0
+        local candidateKey = tonumber(candidate.keyLevel) or 0
+        if existingKey ~= candidateKey then
+            return candidateKey > existingKey and candidate or existing
+        end
+
+        local existingRating = tonumber(existing.rating) or 0
+        local candidateRating = tonumber(candidate.rating) or 0
+        if existingRating ~= candidateRating then
+            return candidateRating > existingRating and candidate or existing
+        end
+
+        return existing
+    end
+
+    local dedupedEntries = {}
+    for _, entry in ipairs(entries) do
+        local merged = false
+        for index, existing in ipairs(dedupedEntries) do
+            if AreEquivalentGuildNames(existing.name, entry.name) then
+                dedupedEntries[index] = ChoosePreferredGuildEntry(existing, entry)
+                merged = true
+                break
+            end
+        end
+
+        if not merged then
+            table.insert(dedupedEntries, entry)
+        end
+    end
+    entries = dedupedEntries
 
     table.sort(entries, function(left, right)
         local leftOnline = left.online and 1 or 0

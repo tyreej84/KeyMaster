@@ -48,6 +48,20 @@ local runtimeEventsRegistered = false
 local databaseSanitized = false
 local runtimeRegistrationDeferred = false
 
+local function TryRegisterRuntimeEvent(eventName)
+    if frame.IsEventRegistered and frame:IsEventRegistered(eventName) then
+        return true
+    end
+
+    local ok = pcall(frame.RegisterEvent, frame, eventName)
+    if not ok then
+        runtimeRegistrationDeferred = true
+        return false
+    end
+
+    return true
+end
+
 local function RegisterRuntimeEvents()
     if runtimeEventsRegistered then
         return true
@@ -59,8 +73,8 @@ local function RegisterRuntimeEvents()
     end
 
     for _, eventName in ipairs(RUNTIME_EVENTS) do
-        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-            frame:RegisterEvent(eventName)
+        if not TryRegisterRuntimeEvent(eventName) then
+            return false
         end
     end
 
@@ -690,6 +704,11 @@ local function BuildSanitizedStoreEntry(normalizedName, rawEntry)
     local updatedAt = ClampNumber(rawEntry.updatedAt, 0, nil, 0) or 0
     local hiddenInRecents = rawEntry.hiddenInRecents == true
 
+    -- Keep stores key-focused: drop entries that do not have a valid keystone.
+    if mapID <= 0 or keyLevel <= 0 then
+        return nil
+    end
+
     local classFile = type(rawEntry.class) == "string" and rawEntry.class or nil
     if classFile and #classFile > 24 then
         classFile = classFile:sub(1, 24)
@@ -770,22 +789,6 @@ local function NormalizeRealmTag(realm)
         return nil
     end
 
-    local function CollapseAtCamelBoundary(token)
-        if type(token) ~= "string" then
-            return token
-        end
-
-        for index = 2, #token do
-            local current = token:sub(index, index)
-            local previous = token:sub(index - 1, index - 1)
-            if current:match("%u") and previous:match("[%l%d]") then
-                return token:sub(1, index - 1)
-            end
-        end
-
-        return token
-    end
-
     local function CollapseTrailingRepeatedSegment(token)
         if type(token) ~= "string" then
             return token
@@ -850,10 +853,10 @@ local function NormalizeRealmTag(realm)
 
     local normalized = realm:gsub("%f[%a][Ss][Ee][Rr][Vv][Ee][Rr]%f[%A]", "")
     normalized = normalized:gsub("[%s_]+", "")
+    normalized = normalized:gsub("[Ss][Ee][Rr][Vv][Ee][Rr]$", "")
     normalized = normalized:gsub("^-+", ""):gsub("-+$", "")
     normalized = CollapseTrailingRepeatedSegment(normalized)
     normalized = CollapseRepeatedRealmWord(normalized)
-    normalized = CollapseAtCamelBoundary(normalized)
     if normalized == "" then
         return nil
     end
@@ -1044,6 +1047,14 @@ local function SaveGuildMemberData(name, data)
     local store = GetGuildMemberStore()
     local now = GetServerTime and GetServerTime() or time()
     local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
+    if not next(candidate) then
+        store[normalized] = nil
+        local shortName = normalized:match("^([^-]+)")
+        if shortName and shortName ~= normalized then
+            store[shortName] = nil
+        end
+        return
+    end
     candidate.updatedAt = now
     candidate.name = normalized
     store[normalized] = candidate
@@ -1059,6 +1070,14 @@ local function SaveOwnCharacterData(name, data)
     local store = GetOwnCharacterStore()
     local now = GetServerTime and GetServerTime() or time()
     local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
+    if not next(candidate) then
+        store[normalized] = nil
+        local shortName = normalized:match("^([^-]+)")
+        if shortName and shortName ~= normalized then
+            store[shortName] = nil
+        end
+        return
+    end
     candidate.updatedAt = now
     candidate.name = normalized
     store[normalized] = candidate
@@ -1526,7 +1545,20 @@ local function PersistOwnGuildSnapshot()
     if UnitFullName then
         local unitName, unitRealm = UnitFullName("player")
         if type(unitName) == "string" and unitName ~= "" then
-            fullName = NormalizePlayerDisplayName(unitName, unitRealm)
+            local trimmedUnitName = strtrim(unitName)
+            local normalizedRealm = NormalizeRealmTag(unitRealm)
+            if trimmedUnitName ~= "" and normalizedRealm and normalizedRealm ~= "" then
+                fullName = string.format("%s-%s", trimmedUnitName, normalizedRealm)
+            elseif trimmedUnitName ~= "" then
+                fullName = trimmedUnitName
+            end
+        end
+    end
+
+    if fullName == shortName then
+        local currentRealm = GetCurrentRealmTag()
+        if currentRealm and currentRealm ~= "" then
+            fullName = string.format("%s-%s", shortName, currentRealm)
         end
     end
 
@@ -1560,6 +1592,14 @@ local function PersistOwnGuildSnapshot()
 
     SaveGuildMemberData(canonicalFullName, snapshot)
     SaveOwnCharacterData(canonicalFullName, snapshot)
+
+    -- Keep own character storage on canonical full name only.
+    if canonicalShortName ~= canonicalFullName then
+        local guildStore = GetGuildMemberStore()
+        local ownCharacterStore = GetOwnCharacterStore()
+        guildStore[canonicalShortName] = nil
+        ownCharacterStore[canonicalShortName] = nil
+    end
 
     return true
 end
