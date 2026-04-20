@@ -48,37 +48,16 @@ local runtimeEventsRegistered = false
 local databaseSanitized = false
 local runtimeRegistrationDeferred = false
 
-local function TryRegisterRuntimeEvent(eventName)
-    if frame.IsEventRegistered and frame:IsEventRegistered(eventName) then
-        return true
+for _, eventName in ipairs(RUNTIME_EVENTS) do
+    if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
+        frame:RegisterEvent(eventName)
     end
-
-    local ok = pcall(frame.RegisterEvent, frame, eventName)
-    if not ok then
-        runtimeRegistrationDeferred = true
-        return false
-    end
-
-    return true
 end
+runtimeEventsRegistered = true
+runtimeRegistrationDeferred = false
 
 local function RegisterRuntimeEvents()
-    if runtimeEventsRegistered then
-        return true
-    end
-
-    if InCombatLockdown and InCombatLockdown() then
-        runtimeRegistrationDeferred = true
-        return false
-    end
-
-    for _, eventName in ipairs(RUNTIME_EVENTS) do
-        if not TryRegisterRuntimeEvent(eventName) then
-            return false
-        end
-    end
-
-    runtimeEventsRegistered = true
+    -- Runtime events are registered at load time to avoid protected RegisterEvent calls later.
     runtimeRegistrationDeferred = false
     return true
 end
@@ -895,33 +874,16 @@ local function CollapseRepeatedRealmSuffix(name)
         return name
     end
 
-    local normalizedRealmSuffix = realmSuffix:gsub("%s+", "")
+    local normalizedRealmSuffix = realmSuffix:gsub("[%s%-]+", "")
     if normalizedRealmSuffix == "" then
         return baseName
     end
 
-    local firstRealmToken = realmSuffix:match("^([^-]+)")
-    local canonicalRealm = NormalizeRealmTag(firstRealmToken)
+    -- Some inputs can include display-style realms with a hyphen (e.g. Earthen-Ring).
+    -- Normalize the full suffix so we keep EarthenRing instead of truncating to Earthen.
+    local canonicalRealm = NormalizeRealmTag(normalizedRealmSuffix)
     if not canonicalRealm then
         return string.format("%s-%s", baseName, normalizedRealmSuffix)
-    end
-
-    local tokenCount = 0
-    local hasAnyToken = false
-    for token in realmSuffix:gmatch("([^-]+)") do
-        hasAnyToken = true
-        tokenCount = tokenCount + 1
-        if tokenCount > 8 then
-            -- Too many realm fragments indicates corrupted input; keep only base + canonical realm.
-            return string.format("%s-%s", baseName, canonicalRealm)
-        end
-        if NormalizeRealmTag(token) ~= canonicalRealm then
-            return string.format("%s-%s", baseName, canonicalRealm)
-        end
-    end
-
-    if not hasAnyToken then
-        return baseName
     end
 
     return string.format("%s-%s", baseName, canonicalRealm)
@@ -947,16 +909,8 @@ local function NormalizeLoosePlayerName(name)
             return nil
         end
 
-        -- Keep storage stable: preserve Name-Realm format but collapse realm suffix to one canonical token.
-        local canonicalRealm = nil
-        realmSuffix = realmSuffix:gsub("%s*%-%s*", "-")
-        for token in realmSuffix:gmatch("([^-]+)") do
-            local normalizedToken = NormalizeRealmTag(token)
-            if normalizedToken then
-                canonicalRealm = normalizedToken
-                break
-            end
-        end
+        -- Preserve full realm identity even when source text includes hyphenated realm display forms.
+        local canonicalRealm = NormalizeRealmTag(realmSuffix:gsub("[%s%-]+", ""))
 
         if not canonicalRealm then
             return baseName
@@ -1632,8 +1586,13 @@ local function BroadcastOwnGuildSnapshot()
     end
 
     local payload = BuildOwnGuildSyncMessage()
+    local sendAddonMessageSafe = KMNS and KMNS.SendAddonMessageSafe
     for _, channel in ipairs(channels) do
-        pcall(C_ChatInfo.SendAddonMessage, KSM_ADDON_PREFIX, payload, channel)
+        if type(sendAddonMessageSafe) == "function" then
+            sendAddonMessageSafe(KSM_ADDON_PREFIX, payload, channel)
+        else
+            pcall(C_ChatInfo.SendAddonMessage, KSM_ADDON_PREFIX, payload, channel)
+        end
     end
 end
 
@@ -4659,6 +4618,16 @@ function CreateKSMWindow()
     requestGuildButton:SetScript("OnClick", function()
         local requested = RequestGuildKeysFromAllSources(true, true)
         RefreshKSMWindowIfVisible()
+        if requested and C_Timer and type(C_Timer.After) == "function" then
+            C_Timer.After(2, function()
+                RequestGuildKeysFromAllSources(true, true)
+                RefreshKSMWindowIfVisible()
+            end)
+            C_Timer.After(8, function()
+                RequestGuildKeysFromAllSources(true, true)
+                RefreshKSMWindowIfVisible()
+            end)
+        end
         if requested then
             PrintLocal("Requested guild keystone updates")
         else
@@ -5083,7 +5052,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
-            RegisterRuntimeEvents()
             InitializeDatabase()
             if IsLoggedIn and IsLoggedIn() then
                 PerformLoginInitialization()

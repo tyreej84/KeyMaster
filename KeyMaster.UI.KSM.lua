@@ -704,11 +704,23 @@ function KSM.RefreshGuildTab(ctx)
             return true
         end
 
+        if type(value) == "string" then
+            local normalized = strtrim(strlower(value))
+            if normalized == "true" or normalized == "online" then
+                return true
+            end
+        end
+
         local numeric = tonumber(value)
         return numeric == 1
     end
 
     local function IsGuildStatusOnline(statusText)
+        if type(statusText) == "number" then
+            -- Non-zero status values (AFK/DND/mobile variants) still indicate an online member.
+            return statusText ~= 0
+        end
+
         if type(statusText) ~= "string" then
             return false
         end
@@ -750,8 +762,13 @@ function KSM.RefreshGuildTab(ctx)
     local entries = {}
     local entryByName = {}
     local rosterByName = {}
+    local rosterSeen = {}
     local ownStore = type(GetOwnCharacterStore) == "function" and GetOwnCharacterStore() or nil
     local ownByAlias = {}
+    ui.ksmGuildOnlineSeenAt = ui.ksmGuildOnlineSeenAt or {}
+    local onlineSeenAt = ui.ksmGuildOnlineSeenAt
+    local now = GetServerTime and GetServerTime() or (time and time()) or 0
+    local onlineStickyWindow = 30
 
     local function BuildNameAliases(rawName)
         local aliases = {}
@@ -838,6 +855,26 @@ function KSM.RefreshGuildTab(ctx)
     end
 
     local playerName = GetNormalizedPlayerName(UnitName("player"))
+    local playerLevel = UnitLevel and UnitLevel("player") or nil
+    local maxPlayerLevel = nil
+    if type(GetMaxLevelForPlayerExpansion) == "function" then
+        maxPlayerLevel = tonumber(GetMaxLevelForPlayerExpansion())
+    end
+    if not maxPlayerLevel and type(MAX_PLAYER_LEVEL) == "number" then
+        maxPlayerLevel = MAX_PLAYER_LEVEL
+    end
+    if type(playerLevel) == "number" and playerLevel > 0 then
+        maxPlayerLevel = max(tonumber(maxPlayerLevel) or 0, playerLevel)
+    end
+    if type(maxPlayerLevel) ~= "number" or maxPlayerLevel <= 0 then
+        maxPlayerLevel = 90
+    end
+
+    local function IsMaxLevel(level)
+        local numericLevel = tonumber(level) or 0
+        return numericLevel >= maxPlayerLevel
+    end
+
     local playerScore = floor((GetMythicPlusScore() or 0) + 0.5)
     local playerMapID, playerKeyLevel = GetOwnedKeystoneSnapshot()
     local playerCache = playerName and GetGuildMemberData(playerName) or nil
@@ -851,13 +888,13 @@ function KSM.RefreshGuildTab(ctx)
 
     local total = GetNumGuildMembersSafe()
     for index = 1, total do
-        local fullName, _, _, _, _, _, _, _, online, statusText, classFile, _, _, isMobile, _, _, guid = GetGuildRosterInfo(index)
+        local fullName, _, _, level, _, _, _, _, online, statusText, classFile, _, _, isMobile, _, _, guid = GetGuildRosterInfo(index)
         if fullName then
             local name = GetNormalizedPlayerName(fullName)
             if not name or name == "" then
                 name = type(fullName) == "string" and fullName ~= "" and fullName or nil
             end
-            if name then
+            if name and IsMaxLevel(level) then
                 local onlineNow = IsGuildOnlineValue(online)
                 if not onlineNow and IsGuildOnlineValue(isMobile) then
                     onlineNow = true
@@ -865,6 +902,25 @@ function KSM.RefreshGuildTab(ctx)
                 if not onlineNow and IsGuildStatusOnline(statusText) then
                     onlineNow = true
                 end
+
+                if onlineNow then
+                    for _, alias in ipairs(BuildNameAliases(name)) do
+                        onlineSeenAt[alias] = now
+                    end
+                else
+                    local seenRecently = false
+                    for _, alias in ipairs(BuildNameAliases(name)) do
+                        local seenAt = tonumber(onlineSeenAt[alias]) or 0
+                        if seenAt > 0 and (now - seenAt) <= onlineStickyWindow then
+                            seenRecently = true
+                            break
+                        end
+                    end
+                    if seenRecently then
+                        onlineNow = true
+                    end
+                end
+
                 local cache = GetGuildMemberData(name) or {}
                 local ownCache = FindOwnEntryByAnyAlias(name)
                 if type(ownCache) == "table" then
@@ -875,12 +931,15 @@ function KSM.RefreshGuildTab(ctx)
                     online = onlineNow,
                     classFile = classFile,
                     guid = guid,
+                    level = tonumber(level) or 0,
                 }
                 for _, alias in ipairs(BuildNameAliases(name)) do
                     rosterByName[alias] = rosterEntry
+                    rosterSeen[alias] = true
                 end
                 for _, alias in ipairs(BuildNameAliases(fullName)) do
                     rosterByName[alias] = rosterEntry
+                    rosterSeen[alias] = true
                 end
 
                 local mapID = isPlayer and playerMapID or cache.mapID
@@ -909,6 +968,7 @@ function KSM.RefreshGuildTab(ctx)
                         spellID = GetPortalSpellIDForMap(normalizedMapID),
                         online = isPlayer or onlineNow,
                         isOwnedCharacter = isPlayer,
+                        guid = guid,
                     }
                     table.insert(entries, rowEntry)
                     MarkEntryAliases(rowEntry.name)
@@ -929,7 +989,8 @@ function KSM.RefreshGuildTab(ctx)
                         local rosterEntry = FindRosterEntryByAnyAlias(normalizedOwnName)
                         local isOwnedPlayer = NamesReferToSameCharacter(normalizedOwnName, playerName)
                         -- Guild tab should not synthesize non-roster rows from own-store alts.
-                        if rosterEntry or isOwnedPlayer then
+                        if (rosterEntry and IsMaxLevel(rosterEntry.level))
+                            or (isOwnedPlayer and IsMaxLevel(playerLevel)) then
                             table.insert(entries, {
                                 name = normalizedOwnName,
                                 class = isOwnedPlayer and playerClass or ownCache.class or (rosterEntry and rosterEntry.classFile),
@@ -939,12 +1000,19 @@ function KSM.RefreshGuildTab(ctx)
                                 spellID = GetPortalSpellIDForMap(ownedMapID),
                                 online = isOwnedPlayer or (rosterEntry and rosterEntry.online) or false,
                                 isOwnedCharacter = true,
+                                guid = rosterEntry and rosterEntry.guid,
                             })
                             MarkEntryAliases(normalizedOwnName)
                         end
                     end
                 end
             end
+        end
+    end
+
+    for alias in pairs(onlineSeenAt) do
+        if not rosterSeen[alias] then
+            onlineSeenAt[alias] = nil
         end
     end
 
@@ -960,6 +1028,7 @@ function KSM.RefreshGuildTab(ctx)
             spellID = GetPortalSpellIDForMap(fallbackMapID),
             online = true,
             isOwnedCharacter = true,
+            guid = UnitGUID and UnitGUID("player") or nil,
         })
         MarkEntryAliases(playerName)
     end
@@ -977,7 +1046,19 @@ function KSM.RefreshGuildTab(ctx)
         return name, nil
     end
 
-    local function AreEquivalentGuildNames(leftName, rightName)
+    local function AreEquivalentGuildEntries(leftEntry, rightEntry)
+        if type(leftEntry) ~= "table" or type(rightEntry) ~= "table" then
+            return false
+        end
+
+        local leftGuid = type(leftEntry.guid) == "string" and leftEntry.guid or nil
+        local rightGuid = type(rightEntry.guid) == "string" and rightEntry.guid or nil
+        if leftGuid and rightGuid and leftGuid == rightGuid then
+            return true
+        end
+
+        local leftName = leftEntry.name
+        local rightName = rightEntry.name
         if NamesReferToSameCharacter(leftName, rightName) then
             return true
         end
@@ -991,6 +1072,31 @@ function KSM.RefreshGuildTab(ctx)
         -- Collapse duplicate short/full forms for the same roster member (e.g. Chenyr + Chenyr-Stormrage).
         if leftShort == rightShort and ((leftRealm and not rightRealm) or (rightRealm and not leftRealm)) then
             return true
+        end
+
+        if leftShort == rightShort then
+            if leftRealm == rightRealm then
+                return true
+            end
+
+            local leftClass = type(leftEntry.class) == "string" and leftEntry.class or nil
+            local rightClass = type(rightEntry.class) == "string" and rightEntry.class or nil
+            local sameClass = leftClass and rightClass and leftClass == rightClass
+            local leftMap = tonumber(leftEntry.mapID) or 0
+            local rightMap = tonumber(rightEntry.mapID) or 0
+            local leftKey = tonumber(leftEntry.keyLevel) or 0
+            local rightKey = tonumber(rightEntry.keyLevel) or 0
+            local leftRating = tonumber(leftEntry.rating) or 0
+            local rightRating = tonumber(rightEntry.rating) or 0
+            local sameKey = leftMap == rightMap and leftKey == rightKey
+            local sameRating = math.abs(leftRating - rightRating) <= 1
+            if sameClass and sameKey and sameRating then
+                return true
+            end
+
+            if leftEntry.isOwnedCharacter or rightEntry.isOwnedCharacter then
+                return true
+            end
         end
 
         return false
@@ -1047,7 +1153,7 @@ function KSM.RefreshGuildTab(ctx)
     for _, entry in ipairs(entries) do
         local merged = false
         for index, existing in ipairs(dedupedEntries) do
-            if AreEquivalentGuildNames(existing.name, entry.name) then
+            if AreEquivalentGuildEntries(existing, entry) then
                 dedupedEntries[index] = ChoosePreferredGuildEntry(existing, entry)
                 merged = true
                 break

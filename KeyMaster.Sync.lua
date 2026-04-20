@@ -8,6 +8,91 @@ local Sync = {}
 ns.Sync = Sync
 
 local lastGuildSyncRequestAt = 0
+local pendingSendRetries = {}
+
+local SEND_RESULT_SUCCESS = 0
+local SEND_RESULT_ADDON_MESSAGE_THROTTLE = 3
+local SEND_RESULT_CHANNEL_THROTTLE = 8
+local SEND_RESULT_ADDON_MESSAGE_LOCKDOWN = 11
+
+local function ExtractSendAddonMessageResult(result1, result2, result3)
+    if type(result3) == "number" then
+        return result3
+    end
+
+    if type(result2) == "number" then
+        return result2
+    end
+
+    if type(result1) == "number" then
+        return result1
+    end
+
+    return nil
+end
+
+local function ShouldRetrySendResult(result)
+    return result == SEND_RESULT_ADDON_MESSAGE_THROTTLE
+        or result == SEND_RESULT_CHANNEL_THROTTLE
+        or result == SEND_RESULT_ADDON_MESSAGE_LOCKDOWN
+end
+
+local function BuildRetryKey(prefix, message, channel, target)
+    return table.concat({
+        tostring(prefix or ""),
+        tostring(channel or ""),
+        tostring(target or ""),
+        tostring(message or ""),
+    }, "\031")
+end
+
+local function SendAddonMessageSafe(prefix, message, channel, target)
+    if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then
+        return false, nil
+    end
+
+    local ok, result1, result2, result3 = pcall(C_ChatInfo.SendAddonMessage, prefix, message, channel, target)
+    if not ok then
+        return false, nil
+    end
+
+    local result = ExtractSendAddonMessageResult(result1, result2, result3)
+    if result == nil and type(result1) == "boolean" then
+        return result1, nil
+    end
+
+    if result == nil then
+        return true, nil
+    end
+
+    return result == SEND_RESULT_SUCCESS, result
+end
+
+local function TrySendAddonMessage(prefix, message, channel, target)
+    local sent, result = SendAddonMessageSafe(prefix, message, channel, target)
+    if sent or not ShouldRetrySendResult(result) then
+        return sent, result
+    end
+
+    if not (C_Timer and type(C_Timer.After) == "function") then
+        return sent, result
+    end
+
+    local retryKey = BuildRetryKey(prefix, message, channel, target)
+    if pendingSendRetries[retryKey] then
+        return sent, result
+    end
+
+    pendingSendRetries[retryKey] = true
+    C_Timer.After(1, function()
+        pendingSendRetries[retryKey] = nil
+        SendAddonMessageSafe(prefix, message, channel, target)
+    end)
+
+    return sent, result
+end
+
+ns.SendAddonMessageSafe = TrySendAddonMessage
 
 local function BuildSyncChannels(ctx)
     local channels = {}
@@ -165,8 +250,8 @@ local function SendDetailsOpenRaidKeystoneRequest(ctx, channel)
         return false
     end
 
-    pcall(C_ChatInfo.SendAddonMessage, ctx.DETAILS_OPENRAID_PREFIX, encoded, channel)
-    return true
+    local sent = TrySendAddonMessage(ctx.DETAILS_OPENRAID_PREFIX, encoded, channel)
+    return sent == true
 end
 
 function Sync.RequestGuildSnapshots(ctx)
@@ -175,7 +260,7 @@ function Sync.RequestGuildSnapshots(ctx)
     end
 
     for _, channel in ipairs(BuildSyncChannels(ctx)) do
-        pcall(C_ChatInfo.SendAddonMessage, ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, channel)
+        TrySendAddonMessage(ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, channel)
     end
 end
 
@@ -199,12 +284,12 @@ function Sync.RequestGuildKeysFromAllSources(ctx, force, includeExternal)
     end
 
     for _, channel in ipairs(channels) do
-        pcall(C_ChatInfo.SendAddonMessage, ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, channel)
+        TrySendAddonMessage(ctx.KSM_ADDON_PREFIX, ctx.KSM_GUILD_SYNC_REQUEST, channel)
     end
 
     if includeExternal and C_ChatInfo and C_ChatInfo.SendAddonMessage then
         for _, channel in ipairs(channels) do
-            pcall(C_ChatInfo.SendAddonMessage, ctx.ASTRAL_KEYS_PREFIX, "request", channel)
+            TrySendAddonMessage(ctx.ASTRAL_KEYS_PREFIX, "request", channel)
             SendDetailsOpenRaidKeystoneRequest(ctx, channel)
         end
     end
