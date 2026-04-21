@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.1] - 2026-04-20
+
+### Fixed
+- Restored missing Mythic+ lifecycle runtime events (`CHALLENGE_MODE_START`, `CHALLENGE_MODE_COMPLETED`, `CHALLENGE_MODE_RESET`) so the custom M+ overlay activates reliably at key start and transitions correctly on completion/reset.
+- Restored supporting run-state events (`COMBAT_LOG_EVENT_UNFILTERED`, `UNIT_FLAGS`, `PLAYER_DEAD`) needed for in-run death tracking and related overlay updates.
+
+### Packaging
+- Bumped TOC version to `1.7.1`.
+
 ## [1.7.0] - 2026-04-14
 
 ### Changed
