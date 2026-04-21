@@ -46,6 +46,10 @@ function RunState.ScheduleOwnedKeystoneObservation(ctx, allowAnnounce, delaySeco
 end
 
 function RunState.GetActiveRunState(ctx)
+    if not ctx.IsInMythicDungeonInstance() then
+        return nil
+    end
+
     if not ctx.IsChallengeModeRunActive() then
         return nil
     end

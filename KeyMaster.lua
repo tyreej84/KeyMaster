@@ -66,7 +66,11 @@ local function RegisterRuntimeEvents()
 
     for _, eventName in ipairs(RUNTIME_EVENTS) do
         if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-            frame:RegisterEvent(eventName)
+            local ok = pcall(frame.RegisterEvent, frame, eventName)
+            if not ok then
+                runtimeRegistrationDeferred = true
+                return false
+            end
         end
     end
 
@@ -2182,6 +2186,11 @@ GetWorldElapsedSeconds = function()
 end
 
 IsChallengeModeRunActive = function()
+    if not IsInMythicDungeonInstance() then
+        ui.inChallengeMode = false
+        return false
+    end
+
     -- First check: if we explicitly received a CHALLENGE_MODE_START event, trust that
     if ui.inChallengeMode then
         return true
@@ -2737,7 +2746,12 @@ local function RenderMythicUI()
     end
 
     local settings = InitializeDatabase().ui
-    local challengeActive = IsChallengeModeRunActive()
+    local inMythicInstance = IsInMythicDungeonInstance()
+    if not inMythicInstance then
+        ui.inChallengeMode = false
+        ui.lastRunState = nil
+    end
+    local challengeActive = inMythicInstance and IsChallengeModeRunActive()
     local shouldSuppressTracker = settings.enabled
         and not settings.hidden
         and challengeActive
@@ -3055,8 +3069,12 @@ local function CreateMythicUI()
     ui.threeChestLine = CreateLine(mythicFrame, 12)
     ui.deathLine = CreateLine(mythicFrame, 12)
 
-    local abandonButton = CreateFrame("Button", nil, mythicFrame, BackdropTemplateMixin and "BackdropTemplate")
+    local abandonTemplate = BackdropTemplateMixin and "SecureActionButtonTemplate,BackdropTemplate" or "SecureActionButtonTemplate"
+    local abandonButton = CreateFrame("Button", nil, mythicFrame, abandonTemplate)
     abandonButton:SetSize(182, 22)
+    abandonButton:RegisterForClicks("AnyUp", "AnyDown")
+    abandonButton:SetAttribute("type", "macro")
+    abandonButton:SetAttribute("macrotext", "/abandon")
     abandonButton:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -3086,20 +3104,6 @@ local function CreateMythicUI()
     abandonButton:SetScript("OnLeave", function(self)
         self:SetBackdropColor(0.06, 0.08, 0.10, 0.90)
         self:SetBackdropBorderColor(1, 1, 1, 0.16)
-    end)
-    abandonButton:SetScript("OnMouseDown", function(self)
-        self:SetBackdropColor(0.03, 0.05, 0.07, 0.96)
-    end)
-    abandonButton:SetScript("OnMouseUp", function(self)
-        if self:IsMouseOver() then
-            self:SetBackdropColor(0.10, 0.14, 0.18, 0.92)
-        else
-            self:SetBackdropColor(0.06, 0.08, 0.10, 0.90)
-        end
-    end)
-
-    abandonButton:SetScript("OnClick", function()
-        RequestAbandonKeyVote()
     end)
     abandonButton:Hide()
     ui.abandonButton = abandonButton
@@ -5120,6 +5124,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         local loadedAddon = ...
         if loadedAddon == addonName then
             InitializeDatabase()
+            RegisterRuntimeEvents()
             if IsLoggedIn and IsLoggedIn() then
                 PerformLoginInitialization()
             end
@@ -5130,7 +5135,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
-        RegisterRuntimeEvents()
         PerformLoginInitialization()
         return
     end

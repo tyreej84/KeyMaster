@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.6] - 2026-04-21
+
+### Fixed
+- Prevented stale Mythic+ overlay persistence after zoning/reset by hard-gating active run rendering to Mythic dungeon instance context and clearing challenge-active flags when out of instance.
+- Updated the abandon vote button to a secure macro action button that executes `/abandon` directly on hardware click.
+- Moved runtime event registration to addon-load timing with guarded registration attempts to reduce `Frame:RegisterEvent()` forbidden errors from runtime registration paths.
+
+### Packaging
+- Bumped TOC version to `1.7.6`.
+
 ## [1.7.5] - 2026-04-21
 
 ### Fixed
