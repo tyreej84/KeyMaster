@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.3] - 2026-04-21
+
+### Packaging
+- Bumped TOC version to `1.7.3`.
+
 ## [1.7.2] - 2026-04-21
 
 ### Fixed
