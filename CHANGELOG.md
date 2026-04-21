@@ -58,9 +58,23 @@ All notable changes to this project will be documented in this file.
 - Excluded the current player from `/ksm recents` so your own key only appears in Guild/Main views.
 - Fixed `/ksm` portal secure-button binding to use spell-name tokens (matching working `/cast` behavior) instead of numeric IDs for improved click-cast reliability.
 - Removed custom `OnClick` handlers from secure portal action buttons so protected spell actions can execute on hardware clicks in Main/Party/Guild.
+- Hardened addon-message sending for Retail 12.x result enums, including retry handling for throttle/lockdown outcomes.
+- Improved Guild tab online detection by correctly handling numeric roster status values and mobile-online flags.
+- Reduced Guild tab online-state stickiness window to improve offline transition responsiveness.
+- Corrected guild roster field unpacking so online/status/isMobile are read from proper `GetGuildRosterInfo` return positions.
+- Added stronger Guild tab dedupe logic using GUID and same-character heuristics to collapse duplicate short/full-realm rows.
+- Added max-level-only filtering for Guild tab roster rows (Retail cap-aware, supports current level 90 environments).
+- Fixed realm normalization so hyphenated realm display forms (for example `Earthen-Ring`) do not collapse into truncated synthetic names.
+- Prevented synthetic `Name-RealmFragment` identity generation in normalized storage keys.
+- Cleaned guild member cache handling and display behavior for short/full name variants to reduce duplicate row resurfacing.
+- Added follow-up refresh bursts to the Guild request button path to capture members whose addon comm handlers initialize shortly after login.
+- Removed runtime protected event-registration retry paths that were still triggering `ADDON_ACTION_FORBIDDEN` in live BugGrabber captures.
+- Simplified runtime event wiring to avoid late `Frame:RegisterEvent()` calls during taint-sensitive contexts.
+- Trimmed non-essential runtime event registrations while preserving guild/chat sync coverage.
 
 ### Packaging
 - Built release archive at `Releases/1.7.0/KeyMaster.zip` with a top-level `KeyMaster/` folder for direct AddOns extraction.
+- Renewed `Releases/1.7.0/KeyMaster.zip` on 2026-04-20 so package contents match latest 1.7.0 code.
 
 ## [1.6.8] - 2026-04-13
 

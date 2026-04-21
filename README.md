@@ -44,6 +44,19 @@ Target client/API: Retail 12.0.5 (compatible with 12.0.1+).
 - Does not synthesize local realm suffixes.
 - Preserves cross-realm player identifiers when they are provided.
 
+### 6) Guild tab inclusion rules (current)
+
+- Shows max-level guild characters only (Retail cap-aware).
+- Shows rows when known key data is available (map + level).
+- Deduplicates same-character variants (short/full realm names) and prefers richer roster/GUID-backed data.
+- Keeps online/offline state resilient to roster churn while updating quickly.
+
+### 7) Guild refresh behavior
+
+- `Request Guild Keys` performs an immediate refresh and short follow-up pulls to catch members whose addons initialize shortly after login.
+- Inbound updates are accepted from KeyStoneMastery sync messages, AstralKeys payloads, and Details/OpenRaid payloads.
+- A guild member may still not appear if they are below max level, have no known key to share, or do not have a compatible key-sharing addon payload active.
+
 ## Commands
 
 ### Chat triggers
