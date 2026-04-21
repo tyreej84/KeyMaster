@@ -1954,6 +1954,11 @@ local function RequestAbandonKeyVote()
         return
     end
 
+    if not IsInGroup() then
+        PrintLocal("Abandon vote requires a party group. /abandon does nothing when solo.")
+        return
+    end
+
     local started = false
 
     if type(SlashCmdList) == "table" and type(SlashCmdList.ABANDON) == "function" then
@@ -2882,7 +2887,7 @@ local function RenderMythicUI()
             end
 
             local deathCount = tonumber(state.deathCount) or 0
-            if deathCount >= ABANDON_BUTTON_DEATH_THRESHOLD then
+            if deathCount >= ABANDON_BUTTON_DEATH_THRESHOLD and IsInGroup() then
                 ui.abandonButton:ClearAllPoints()
                 ui.abandonButton:SetPoint("TOP", ui.frame, "TOP", 0, y - 2)
                 ui.abandonButton:Show()
@@ -3069,12 +3074,8 @@ local function CreateMythicUI()
     ui.threeChestLine = CreateLine(mythicFrame, 12)
     ui.deathLine = CreateLine(mythicFrame, 12)
 
-    local abandonTemplate = BackdropTemplateMixin and "SecureActionButtonTemplate,BackdropTemplate" or "SecureActionButtonTemplate"
-    local abandonButton = CreateFrame("Button", nil, mythicFrame, abandonTemplate)
+    local abandonButton = CreateFrame("Button", nil, mythicFrame, BackdropTemplateMixin and "BackdropTemplate")
     abandonButton:SetSize(182, 22)
-    abandonButton:RegisterForClicks("AnyUp", "AnyDown")
-    abandonButton:SetAttribute("type", "macro")
-    abandonButton:SetAttribute("macrotext", "/abandon")
     abandonButton:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",

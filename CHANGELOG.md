@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.8] - 2026-04-21
+
+### Fixed
+- Clarified abandon behavior for solo runs: the button now explicitly reports that abandon voting requires a party, and the button is only shown at `5+` deaths while grouped.
+- Removed secure-template abandon button wiring that could no-op in some client states; abandon now routes through explicit click handling again.
+- Hardened chat command extraction against secret-string payload taint by validating chat payload readability before command parsing/string normalization.
+
+### Packaging
+- Bumped TOC version to `1.7.8`.
+
 ## [1.7.7] - 2026-04-21
 
 ### Fixed

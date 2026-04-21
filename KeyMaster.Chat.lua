@@ -49,6 +49,10 @@ function Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, message, sender)
 end
 
 function Chat.ExtractCommandWithFallback(ctx, message)
+    if ctx.CanReadChatPayload and not ctx.CanReadChatPayload(message) then
+        return nil
+    end
+
     local command = ctx.ExtractRequestCommand and ctx.ExtractRequestCommand(message) or nil
     if command then
         return command
@@ -107,6 +111,10 @@ end
 
 function Chat.HandleChatMessage(ctx, event, message, sender)
     if not ctx.CHAT_EVENTS[event] then
+        return
+    end
+
+    if ctx.CanReadChatPayload and not ctx.CanReadChatPayload(message) then
         return
     end
 
