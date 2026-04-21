@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.5] - 2026-04-21
+
+### Fixed
+- Updated the abandon button fallback to execute the same slash-command parsing path as manual `/abandon`, improving reliability on client builds where direct `C_ChallengeMode` vote APIs are unavailable.
+
+### Packaging
+- Bumped TOC version to `1.7.5`.
+
 ## [1.7.4] - 2026-04-21
 
 ### Fixed

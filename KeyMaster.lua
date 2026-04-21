@@ -1962,6 +1962,11 @@ local function RequestAbandonKeyVote()
         end
     end
 
+    if not started and type(ChatEdit_ParseText) == "function" then
+        local ok = pcall(ChatEdit_ParseText, "/abandon", DEFAULT_CHAT_FRAME)
+        started = ok == true
+    end
+
     if not started and type(SlashCmdList) == "table" and type(SlashCmdList.ABANDON) == "function" then
         local ok = pcall(SlashCmdList.ABANDON, "")
         started = ok == true
@@ -1970,7 +1975,7 @@ local function RequestAbandonKeyVote()
     if started then
         PrintLocal("Started vote to abandon the key")
     else
-        PrintLocal("Unable to start abandon vote in this client build. Try /abandon")
+        PrintLocal("Unable to start abandon vote from the button in this client build. Please type /abandon")
     end
 end
 
