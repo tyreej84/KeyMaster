@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.4] - 2026-04-21
+
+### Fixed
+- Updated the Mythic+ abandon vote button to use a slash-command fallback (`/abandon`) when direct `C_ChallengeMode` vote APIs are unavailable in the client build.
+
+### Changed
+- Restyled the Mythic+ abandon vote button to match the KeyMaster overlay aesthetic (custom dark panel styling with blue accent and hover/press states).
+- The abandon vote button now stays hidden until death count reaches `5` or higher.
+
+### Packaging
+- Bumped TOC version to `1.7.4`.
+
 ## [1.7.3] - 2026-04-21
 
 ### Packaging

@@ -95,6 +95,7 @@ local DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.
 local CLASS_ID_TO_FILE = _G.KeyMasterNS and _G.KeyMasterNS.CLASS_ID_TO_FILE or {}
 local CHALLENGERS_PERIL_AFFIX_ID = _G.KeyMasterNS and _G.KeyMasterNS.CHALLENGERS_PERIL_AFFIX_ID or 152
 local BREAK_TIMER_BLUE = _G.KeyMasterNS and _G.KeyMasterNS.BREAK_TIMER_BLUE or { 0.15, 0.55, 1.00, 0.90 }
+local ABANDON_BUTTON_DEATH_THRESHOLD = 5
 local DEFAULT_DB = _G.KeyMasterNS and _G.KeyMasterNS.DEFAULT_DB or {
     ui = {
         enabled = true,
@@ -1961,10 +1962,15 @@ local function RequestAbandonKeyVote()
         end
     end
 
+    if not started and type(SlashCmdList) == "table" and type(SlashCmdList.ABANDON) == "function" then
+        local ok = pcall(SlashCmdList.ABANDON, "")
+        started = ok == true
+    end
+
     if started then
         PrintLocal("Started vote to abandon the key")
     else
-        PrintLocal("Unable to start abandon vote in this client build")
+        PrintLocal("Unable to start abandon vote in this client build. Try /abandon")
     end
 end
 
@@ -2856,10 +2862,15 @@ local function RenderMythicUI()
                 UpdateDeathTooltipArea()
             end
 
-            ui.abandonButton:ClearAllPoints()
-            ui.abandonButton:SetPoint("TOP", ui.frame, "TOP", 0, y - 2)
-            ui.abandonButton:Show()
-            y = y - ui.abandonButton:GetHeight() - 8
+            local deathCount = tonumber(state.deathCount) or 0
+            if deathCount >= ABANDON_BUTTON_DEATH_THRESHOLD then
+                ui.abandonButton:ClearAllPoints()
+                ui.abandonButton:SetPoint("TOP", ui.frame, "TOP", 0, y - 2)
+                ui.abandonButton:Show()
+                y = y - ui.abandonButton:GetHeight() - 8
+            else
+                ui.abandonButton:Hide()
+            end
 
             ui.frame:SetHeight(max(120, -y + 12))
         elseif challengeActive then
@@ -2890,9 +2901,7 @@ local function RenderMythicUI()
             ui.threeChestLine:Hide()
             ui.deathLine:Hide()
             UpdateDeathTooltipArea()
-            ui.abandonButton:ClearAllPoints()
-            ui.abandonButton:SetPoint("TOP", ui.frame, "TOP", 0, y - 8)
-            ui.abandonButton:Show()
+            ui.abandonButton:Hide()
             ui.enemyBar:Hide()
             for index = 1, #ui.objectiveLines do
                 ui.objectiveLines[index]:Hide()
@@ -3041,9 +3050,49 @@ local function CreateMythicUI()
     ui.threeChestLine = CreateLine(mythicFrame, 12)
     ui.deathLine = CreateLine(mythicFrame, 12)
 
-    local abandonButton = CreateFrame("Button", nil, mythicFrame, "UIPanelButtonTemplate")
-    abandonButton:SetSize(176, 20)
-    abandonButton:SetText("Vote: Abandon Key")
+    local abandonButton = CreateFrame("Button", nil, mythicFrame, BackdropTemplateMixin and "BackdropTemplate")
+    abandonButton:SetSize(182, 22)
+    abandonButton:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false,
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 },
+    })
+    abandonButton:SetBackdropColor(0.06, 0.08, 0.10, 0.90)
+    abandonButton:SetBackdropBorderColor(1, 1, 1, 0.16)
+
+    local abandonAccent = abandonButton:CreateTexture(nil, "BORDER")
+    abandonAccent:SetPoint("TOPLEFT", abandonButton, "TOPLEFT", 1, -1)
+    abandonAccent:SetPoint("TOPRIGHT", abandonButton, "TOPRIGHT", -1, -1)
+    abandonAccent:SetHeight(2)
+    abandonAccent:SetColorTexture(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.90)
+
+    local abandonLabel = abandonButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    abandonLabel:SetPoint("CENTER", abandonButton, "CENTER", 0, 0)
+    abandonLabel:SetText("Vote: Abandon Key")
+    abandonLabel:SetTextColor(0.90, 0.95, 1.00, 1.00)
+    abandonButton.label = abandonLabel
+
+    abandonButton:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.10, 0.14, 0.18, 0.92)
+        self:SetBackdropBorderColor(BREAK_TIMER_BLUE[1], BREAK_TIMER_BLUE[2], BREAK_TIMER_BLUE[3], 0.55)
+    end)
+    abandonButton:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.06, 0.08, 0.10, 0.90)
+        self:SetBackdropBorderColor(1, 1, 1, 0.16)
+    end)
+    abandonButton:SetScript("OnMouseDown", function(self)
+        self:SetBackdropColor(0.03, 0.05, 0.07, 0.96)
+    end)
+    abandonButton:SetScript("OnMouseUp", function(self)
+        if self:IsMouseOver() then
+            self:SetBackdropColor(0.10, 0.14, 0.18, 0.92)
+        else
+            self:SetBackdropColor(0.06, 0.08, 0.10, 0.90)
+        end
+    end)
+
     abandonButton:SetScript("OnClick", function()
         RequestAbandonKeyVote()
     end)
