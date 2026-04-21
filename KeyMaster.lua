@@ -48,20 +48,11 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_OFFICER",
 }
 local databaseSanitized = false
-local runtimeEventsRegistered = false
 
-local function RegisterRuntimeEvents()
-    if runtimeEventsRegistered then
-        return
+for _, eventName in ipairs(RUNTIME_EVENTS) do
+    if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
+        frame:RegisterEvent(eventName)
     end
-
-    for _, eventName in ipairs(RUNTIME_EVENTS) do
-        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-            frame:RegisterEvent(eventName)
-        end
-    end
-
-    runtimeEventsRegistered = true
 end
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
@@ -5128,7 +5119,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddon = ...
         if loadedAddon == addonName then
-            RegisterRuntimeEvents()
             InitializeDatabase()
             if IsLoggedIn and IsLoggedIn() then
                 PerformLoginInitialization()
@@ -5140,7 +5130,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
-        RegisterRuntimeEvents()
         PerformLoginInitialization()
         return
     end

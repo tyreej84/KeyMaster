@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.2] - 2026-04-21
+
+### Fixed
+- Removed runtime event-registration calls from login/addon handlers and restored one-time startup event wiring to eliminate the KeyMaster `Frame:RegisterEvent()` forbidden call path reported by BugGrabber.
+
+### Packaging
+- Bumped TOC version to `1.8.2`.
+
 ## [1.8.1] - 2026-04-21
 
 ### Fixed
