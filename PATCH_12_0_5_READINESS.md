@@ -42,3 +42,7 @@ This checklist is for launch-day validation after the Retail 12.0.5 patch goes l
 
 - If all checks pass, tag the next release as Retail 12.0.5 validated.
 - If an API behavior changed, patch wrapper/fallback functions first in [KeyMaster.lua](KeyMaster.lua) and [KeyMaster.Sync.lua](KeyMaster.Sync.lua).
+
+## Validation Status
+
+- Release `1.8.3` prepared on 2026-04-21 with `## Interface: 120005`.

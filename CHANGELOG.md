@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.3] - 2026-04-21
+
+### Changed
+- Updated addon metadata for Retail patch day by setting TOC interface to `120005`.
+
+### Packaging
+- Bumped TOC version to `1.8.3`.
+
 ## [1.8.2] - 2026-04-21
 
 ### Fixed
