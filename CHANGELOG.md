@@ -2,6 +2,164 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.9] - 2026-04-21
+
+### Fixed
+- Removed deferred runtime event-registration retries and switched to one-time startup event wiring so KeyMaster no longer performs late `RegisterEvent` calls in taint-sensitive contexts.
+- Hardened abandon vote button handling to prefer Blizzard challenge-mode vote APIs only (`RequestLeaverVote`/`StartLeaverVote`) instead of slash/macro fallbacks that can vary by client state.
+- Improved world timer reads by probing available timer IDs before falling back, reducing brittle assumptions around timer index ordering in Retail 12.0.1.
+
+### Packaging
+- Bumped TOC version to `1.7.9`.
+
+## [1.7.8] - 2026-04-21
+
+### Fixed
+- Clarified abandon behavior for solo runs: the button now explicitly reports that abandon voting requires a party, and the button is only shown at `5+` deaths while grouped.
+- Removed secure-template abandon button wiring that could no-op in some client states; abandon now routes through explicit click handling again.
+- Hardened chat command extraction against secret-string payload taint by validating chat payload readability before command parsing/string normalization.
+
+### Packaging
+- Bumped TOC version to `1.7.8`.
+
+## [1.7.7] - 2026-04-21
+
+### Fixed
+- Fixed abandon button no-op behavior by restoring an explicit click-handler fallback (`RequestAbandonKeyVote`) while keeping secure `/abandon` macro attributes.
+- Updated abandon vote invocation order to try slash-handler execution first, then direct challenge-mode APIs, then macro fallback.
+- Moved runtime event registration back to `PLAYER_LOGIN` timing to avoid the startup forbidden path introduced by addon-load registration timing.
+
+### Packaging
+- Bumped TOC version to `1.7.7`.
+
+## [1.7.6] - 2026-04-21
+
+### Fixed
+- Prevented stale Mythic+ overlay persistence after zoning/reset by hard-gating active run rendering to Mythic dungeon instance context and clearing challenge-active flags when out of instance.
+- Updated the abandon vote button to a secure macro action button that executes `/abandon` directly on hardware click.
+- Moved runtime event registration to addon-load timing with guarded registration attempts to reduce `Frame:RegisterEvent()` forbidden errors from runtime registration paths.
+
+### Packaging
+- Bumped TOC version to `1.7.6`.
+
+## [1.7.5] - 2026-04-21
+
+### Fixed
+- Updated the abandon button fallback to execute the same slash-command parsing path as manual `/abandon`, improving reliability on client builds where direct `C_ChallengeMode` vote APIs are unavailable.
+
+### Packaging
+- Bumped TOC version to `1.7.5`.
+
+## [1.7.4] - 2026-04-21
+
+### Fixed
+- Updated the Mythic+ abandon vote button to use a slash-command fallback (`/abandon`) when direct `C_ChallengeMode` vote APIs are unavailable in the client build.
+
+### Changed
+- Restyled the Mythic+ abandon vote button to match the KeyMaster overlay aesthetic (custom dark panel styling with blue accent and hover/press states).
+- The abandon vote button now stays hidden until death count reaches `5` or higher.
+
+### Packaging
+- Bumped TOC version to `1.7.4`.
+
+## [1.7.3] - 2026-04-21
+
+### Packaging
+- Bumped TOC version to `1.7.3`.
+
+## [1.7.2] - 2026-04-21
+
+### Fixed
+- Fixed a nil run-state context binding (`GetWorldElapsedSeconds`) that could error during M+ UI refresh and prevent the overlay from rendering.
+- Fixed additional nil run-state helper bindings (`GetActiveKeystoneDetails`, affix/criteria/death helpers) so context callbacks remain valid across load order.
+- Removed main-chunk runtime event registration and restored guarded runtime event wiring to prevent `Frame:RegisterEvent()` forbidden errors at addon load.
+
+### Packaging
+- Bumped TOC version to `1.7.2`.
+
+## [1.7.1] - 2026-04-20
+
+### Fixed
+- Restored missing Mythic+ lifecycle runtime events (`CHALLENGE_MODE_START`, `CHALLENGE_MODE_COMPLETED`, `CHALLENGE_MODE_RESET`) so the custom M+ overlay activates reliably at key start and transitions correctly on completion/reset.
+- Restored supporting run-state events (`COMBAT_LOG_EVENT_UNFILTERED`, `UNIT_FLAGS`, `PLAYER_DEAD`) needed for in-run death tracking and related overlay updates.
+
+### Packaging
+- Bumped TOC version to `1.7.1`.
+
+## [1.7.0] - 2026-04-14
+
+### Changed
+- Renamed addon branding from **KeyStone Master** to **KeyStoneMastery**.
+- Updated chat reply prefix to `KeyStoneMastery:`.
+- Prepared Retail `12.0.5` readiness notes and validation checklist.
+- Updated project docs to call out Retail `12.0.5` forward compatibility.
+- Expanded `/ksm` dashboard as a full multi-tab Mythic+ panel (`Main`, `Party`, `Guild`).
+- Added a `/ksm` `Recents` tab for previously seen players with known key data.
+- Added TOC icon metadata so KeyStoneMastery shows an addon-list icon in-game.
+- Added Guild tab controls for pagination and `Hide Offline` filtering.
+- Guild request button now triggers active guild key pulls across enabled sources.
+- Kept `KeyMaster.lua` as the main runtime file and split shared constants/data into dedicated modules:
+  - `KeyMaster.Constants.lua`
+  - `KeyMaster.Data.lua`
+- Split reusable parsing/formatting/request helpers into `KeyMaster.Utils.lua`.
+- Split guild safety/recent-activity helpers into `KeyMaster.GuildUtils.lua`.
+- Split addon sync/external key-ingestion pipeline into `KeyMaster.Sync.lua`.
+- Extracted `/ksm` tab refresh logic into `KeyMaster.UI.KSM.lua` to keep `KeyMaster.lua` focused on orchestration.
+- Updated TOC load order so shared modules load before `KeyMaster.lua`.
+
+### Fixed
+- Reduced risk of Lua chunk-local overflow in the main file by moving large static tables out of `KeyMaster.lua`.
+- Added passive guild key cache ingestion from observed keystone chat links and external key-sharing payloads.
+- Restricted `!keys` handling to KeyMaster sync behavior while leaving active external pulls to the Guild request path.
+- Strengthened guild sync payload parsing and sanitization for malformed addon messages.
+- Added AstralKeys `sync*` batch payload parsing (in addition to `updateV*`) so guild key snapshots populate reliably.
+- Expanded external key-ingestion channels for AstralKeys/OpenRaid messages beyond guild-only flows to improve party/guild coverage.
+- Ensured guild chat key replies are merged into `/ksm guild` rows even when roster-derived entries already exist, with Blizzard roster/API enrichment for class, online state, and score when available.
+- Improved Blizzard rating enrichment lookups for Party/Guild tabs by trying multiple member identifiers (GUID, full name, normalized name) when score data is missing.
+- Restored guild/officer `!keys` auto-replies when chat payload coercion is required by using safer command normalization flow.
+- Added AstralKeys plaintext chat parsing for messages like `Astral Keys: [Dungeon (12)]` so guild tab rows are created from those links.
+- Expanded generic guild chat keystone parsing to capture additional addon/user-facing formats (including `(+12)` and `+12` variants) so addon responders reliably populate `/ksm guild`.
+- Added fail-safe guild command replies so `!keys`/`!score`/`!best` still respond with fallback text when runtime command parsing or reply generation returns nil.
+- Updated `!keys` reply building to fall back to owned snapshot text (`+level dungeon`) when hyperlink creation is unavailable, preventing false "Keystone unavailable" replies.
+- Fixed portal click-casting reliability in `/ksm` Main/Party/Guild views by using a shared known-spell check (`IsSpellKnownOrOverridesKnown`/`IsPlayerSpell`) and robust cast fallback path.
+- Replaced direct portal cast calls with secure spell action-button bindings in Main/Party/Guild portal buttons to resolve BugGrabber `ADDON_ACTION_FORBIDDEN` protected-call errors.
+- Removed legacy direct-cast behavior from the old portal helper so stale call paths cannot invoke protected cast APIs.
+- Fixed portal button click execution by registering secure portal buttons for hardware clicks and binding spell cast tokens compatible with secure action attributes.
+- Hardened portal spell API compatibility checks to avoid indexing non-table globals on clients where `C_Spell`/`C_SpellBook` differ, preventing addon load/runtime breaks.
+- Hardened `/km` and `/ksm` slash registration with unique command IDs and early command binding to avoid addon command collisions and preserve command availability during partial initialization.
+- Added dual slash alias registration (`KEYMASTER`/`KEYSTONEMASTER` plus `KEYSTONEMASTERY*`) and login-time rebind to keep `/km` and `/ksm` available even if another addon overwrites slash tables.
+- Added ultra-early fallback slash handlers in constants so `/km` and `/ksm` return a startup diagnostic if later files fail during addon initialization.
+- Hardened core startup against early-load globals by guarding slash registration when `SlashCmdList` is unavailable and falling back to direct `ADDON_LOADED` registration if `C_Timer.After` is unavailable.
+- Simplified `/km` and `/ksm` core slash wiring back to direct handlers in `KeyMaster.lua` to reduce chunk complexity and avoid early core aborts while retaining constants-level fallback diagnostics.
+- Fixed core compile failure (`main function has more than 200 local variables`) by removing top-level utility alias locals in `KeyMaster.lua` and routing those helpers through a shared namespace reference.
+- Fixed `/ksm` teleport buttons (Main/Party/Guild) no-op behavior by binding secure spell actions for valid portal spell IDs regardless of known-check result; known-check now controls visuals/tooltips only.
+- Fixed `/ksm guild` `Hide Offline` filtering by normalizing Blizzard roster online flags (0/1/boolean) before row inclusion and filter checks.
+- Improved `/ksm guild` population reliability by including recent roster members even when key cache is empty, guarding against invalid roster names, and always showing the current player row.
+- Hotfixed `/ksm` tab rendering break by removing non-WoW Lua `goto`/label syntax from guild-tab roster parsing.
+- Expanded KeyMaster sync request/broadcast channels to include active group contexts (`PARTY`/`RAID`/`INSTANCE_CHAT`) in addition to guild, improving raid pickup coverage.
+- Updated `/ksm guild` roster filtering to list only guild members with known keys, reducing noise from inactive/alts-without-key entries.
+- Ensured `/ksm guild` always includes the current player row when your own known key exists, even if roster normalization misses your name.
+- Excluded the current player from `/ksm recents` so your own key only appears in Guild/Main views.
+- Fixed `/ksm` portal secure-button binding to use spell-name tokens (matching working `/cast` behavior) instead of numeric IDs for improved click-cast reliability.
+- Removed custom `OnClick` handlers from secure portal action buttons so protected spell actions can execute on hardware clicks in Main/Party/Guild.
+- Hardened addon-message sending for Retail 12.x result enums, including retry handling for throttle/lockdown outcomes.
+- Improved Guild tab online detection by correctly handling numeric roster status values and mobile-online flags.
+- Reduced Guild tab online-state stickiness window to improve offline transition responsiveness.
+- Corrected guild roster field unpacking so online/status/isMobile are read from proper `GetGuildRosterInfo` return positions.
+- Added stronger Guild tab dedupe logic using GUID and same-character heuristics to collapse duplicate short/full-realm rows.
+- Added max-level-only filtering for Guild tab roster rows (Retail cap-aware, supports current level 90 environments).
+- Fixed realm normalization so hyphenated realm display forms (for example `Earthen-Ring`) do not collapse into truncated synthetic names.
+- Prevented synthetic `Name-RealmFragment` identity generation in normalized storage keys.
+- Cleaned guild member cache handling and display behavior for short/full name variants to reduce duplicate row resurfacing.
+- Added follow-up refresh bursts to the Guild request button path to capture members whose addon comm handlers initialize shortly after login.
+- Removed runtime protected event-registration retry paths that were still triggering `ADDON_ACTION_FORBIDDEN` in live BugGrabber captures.
+- Simplified runtime event wiring to avoid late `Frame:RegisterEvent()` calls during taint-sensitive contexts.
+- Trimmed non-essential runtime event registrations while preserving guild/chat sync coverage.
+
+### Packaging
+- Built release archive at `Releases/1.7.0/KeyMaster.zip` with a top-level `KeyMaster/` folder for direct AddOns extraction.
+- Renewed `Releases/1.7.0/KeyMaster.zip` on 2026-04-20 so package contents match latest 1.7.0 code.
+
 ## [1.6.8] - 2026-04-13
 
 ### Changed

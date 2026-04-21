@@ -1,0 +1,120 @@
+local ns = _G.KeyMasterNS
+if type(ns) ~= "table" then
+    ns = {}
+    _G.KeyMasterNS = ns
+end
+
+ns.REPLY_PREFIX = "KSM:"
+ns.KEYSTONE_ITEM_IDS = { [180653] = true, [158923] = true, [151086] = true }
+ns.KEYSTONE_BAG_SLOTS = { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
+ns.KSM_PORTAL_SPELL_IDS = {
+    [402] = 393273, -- Algeth'ar Academy
+    [239] = 1254551, -- Seat of the Triumvirate
+    [556] = 1254555, -- Pit of Saron
+    [557] = 1254400, -- Windrunner Spire
+    [558] = 1254572, -- Magisters' Terrace
+    [559] = 1254563, -- Nexus-Point Xenas
+    [560] = 1254559, -- Maisara Caverns
+    [161] = 159898, -- Skyreach
+}
+ns.KSM_PORTAL_SPELL_IDS_HORDE = {
+    [353] = 464256, -- Siege of Boralus (Horde)
+    [247] = 467555, -- The MOTHERLODE!! (Horde)
+}
+ns.KEYS_TEXT_COMMAND = "!keys"
+ns.KEY_TEXT_COMMAND = "!key"
+ns.SCORE_TEXT_COMMAND = "!score"
+ns.SCORES_TEXT_COMMAND = "!scores"
+ns.BEST_TEXT_COMMAND = "!best"
+ns.KSM_ADDON_PREFIX = "KeyMaster"
+ns.KSM_GUILD_SYNC_VERSION = "g1"
+ns.KSM_GUILD_SYNC_REQUEST = "req1"
+ns.ASTRAL_KEYS_PREFIX = "AstralKeys"
+ns.DETAILS_OPENRAID_PREFIX = "LRS"
+ns.DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX = "J"
+ns.DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = "K"
+ns.CLASS_ID_TO_FILE = {
+    [1] = "WARRIOR",
+    [2] = "PALADIN",
+    [3] = "HUNTER",
+    [4] = "ROGUE",
+    [5] = "PRIEST",
+    [6] = "DEATHKNIGHT",
+    [7] = "SHAMAN",
+    [8] = "MAGE",
+    [9] = "WARLOCK",
+    [10] = "MONK",
+    [11] = "DRUID",
+    [12] = "DEMONHUNTER",
+    [13] = "EVOKER",
+}
+ns.KSM_VAULT_TEXTURE_EMPTY = "Interface\\AddOns\\KeyMaster\\Assets\\UI\\Vault.png"
+ns.KSM_VAULT_TEXTURE_GLOWY = "Interface\\AddOns\\KeyMaster\\Assets\\UI\\Vault_Glowy.png"
+ns.REQUEST_COMMAND_SET = {
+    ["!key"] = true,
+    ["!keys"] = true,
+    ["!score"] = true,
+    ["!scores"] = true,
+    ["!best"] = true,
+}
+ns.MISMATCH_TOAST_COOLDOWN_SECONDS = 2
+ns.UI_REFRESH_INTERVAL_SECONDS = 0.2
+ns.COMPLETION_DISPLAY_SECONDS = 90
+ns.CHALLENGERS_PERIL_AFFIX_ID = 152
+ns.BREAK_TIMER_BLUE = { 0.15, 0.55, 1.00, 0.90 }
+ns.KSM_GUILD_RECENT_DAYS = 7
+ns.CHAT_EVENTS = {
+    CHAT_MSG_PARTY = true,
+    CHAT_MSG_PARTY_LEADER = true,
+    CHAT_MSG_RAID = true,
+    CHAT_MSG_RAID_LEADER = true,
+    CHAT_MSG_INSTANCE_CHAT = true,
+    CHAT_MSG_INSTANCE_CHAT_LEADER = true,
+    CHAT_MSG_GUILD = true,
+    CHAT_MSG_OFFICER = true,
+}
+ns.CHAT_EVENT_TO_CHANNEL = {
+    CHAT_MSG_PARTY = "PARTY",
+    CHAT_MSG_PARTY_LEADER = "PARTY",
+    CHAT_MSG_RAID = "RAID",
+    CHAT_MSG_RAID_LEADER = "RAID",
+    CHAT_MSG_INSTANCE_CHAT = "INSTANCE_CHAT",
+    CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
+    CHAT_MSG_GUILD = "GUILD",
+    CHAT_MSG_OFFICER = "OFFICER",
+}
+ns.MAX_DEFERRED_CHAT_MESSAGES = 10
+ns.DEFAULT_DB = {
+    ui = {
+        enabled = true,
+        hideTrackerInMythicPlus = true,
+        hideOfflineGuild = false,
+        locked = true,
+        hidden = false,
+        scale = 1,
+        point = { "TOPRIGHT", "UIParent", "TOPRIGHT", -24, -210 },
+    },
+    guild = {
+        members = {},
+    },
+}
+
+-- Early fallback slash bindings: if later addon files error, users still get a KeyMaster response.
+local function KeyMasterEarlySlashFallback(command)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff98KSM:|r core did not fully initialize. Check Lua errors, then /reload.")
+    end
+end
+
+if type(SlashCmdList) == "table" then
+    if type(SlashCmdList.KEYMASTER) ~= "function" then
+        SLASH_KEYMASTER1 = "/keymaster"
+        SLASH_KEYMASTER2 = "/km"
+        SlashCmdList.KEYMASTER = KeyMasterEarlySlashFallback
+    end
+
+    if type(SlashCmdList.KEYSTONEMASTER) ~= "function" then
+        SLASH_KEYSTONEMASTER1 = "/ksm"
+        SlashCmdList.KEYSTONEMASTER = KeyMasterEarlySlashFallback
+    end
+end
