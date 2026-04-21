@@ -170,10 +170,13 @@ function ns.BuildKeystoneSnapshotKey(mapID, keyLevel)
 end
 
 function ns.ExtractRequestCommand(message)
+    if not ns.CanReadChatPayload(message) then
+        return nil
+    end
+
     local requestSet = ns.REQUEST_COMMAND_SET or {}
     local ok, command = pcall(function(rawMessage)
-        local msg = string.format("%s", rawMessage)
-        msg = trim(string.lower(msg))
+        local msg = trim(string.lower(rawMessage))
         msg = msg:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 
         local parsed = msg:match("^(![%a]+)") or msg:match("%s(![%a]+)")
@@ -182,7 +185,6 @@ function ns.ExtractRequestCommand(message)
         end
 
         parsed = parsed:gsub("[,%.%?!;:]+$", "")
-        parsed = string.format("%s", parsed)
         if requestSet[parsed] then
             return parsed
         end
@@ -198,13 +200,29 @@ function ns.ExtractRequestCommand(message)
 end
 
 function ns.CanReadChatPayload(message)
-    if type(message) == "string" then
-        return message ~= ""
+    if InCombatLockdown and InCombatLockdown() then
+        return false
     end
 
-    local ok, normalized = pcall(function(rawMessage)
-        return string.format("%s", rawMessage)
-    end, message)
+    if message == nil then
+        return false
+    end
 
-    return ok and type(normalized) == "string" and normalized ~= ""
+    if type(canaccessvalue) == "function" then
+        local ok, canRead = pcall(canaccessvalue, message)
+        if not ok or canRead ~= true then
+            return false
+        end
+    end
+
+    if type(message) ~= "string" then
+        return false
+    end
+
+    local ok, length = pcall(string.len, message)
+    if not ok then
+        return false
+    end
+
+    return type(length) == "number" and length > 0
 end

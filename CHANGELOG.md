@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.1] - 2026-04-21
+
+### Fixed
+- Enforced combat-time chat safety by treating all incoming chat payloads as unreadable while in combat.
+- Added an explicit combat short-circuit in chat handlers so KeyMaster performs no chat parsing during combat lockdown.
+
+### Packaging
+- Bumped TOC version to `1.8.1`.
+
+## [1.8.0] - 2026-04-21
+
+### Fixed
+- Hardened chat payload safety checks so unreadable secret-string payloads are dropped before command extraction, avoiding secret-string conversion faults in chat handlers.
+- Removed string-coercion fallback in chat message handling for non-string payloads; only readable plain strings now proceed to parsing.
+- Moved runtime event registration out of file-load scope and into one-time startup registration, preventing protected `RegisterEvent` calls from the main chunk path.
+
+### Changed
+- Added `/Backup/` to `.gitignore` to keep local deployment backups out of git workflows.
+
+### Packaging
+- Bumped TOC version to `1.8.0`.
+
 ## [1.7.9] - 2026-04-21
 
 ### Fixed

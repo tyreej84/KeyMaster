@@ -114,25 +114,19 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
         return
     end
 
+    if InCombatLockdown and InCombatLockdown() then
+        return
+    end
+
     if ctx.CanReadChatPayload and not ctx.CanReadChatPayload(message) then
         return
     end
 
-    local normalizedMessage = message
-    if type(normalizedMessage) ~= "string" then
-        if not ctx.CanReadChatPayload(message) then
-            return
-        end
-
-        local ok, converted = pcall(function(rawMessage)
-            return string.format("%s", rawMessage)
-        end, normalizedMessage)
-        if ok and type(converted) == "string" then
-            normalizedMessage = converted
-        else
-            return
-        end
+    if type(message) ~= "string" then
+        return
     end
+
+    local normalizedMessage = message
 
     Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, normalizedMessage, sender)
 
