@@ -14,6 +14,11 @@ local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 local RefreshMythicUI
 local GetWorldElapsedSeconds
+local GetActiveKeystoneDetails
+local GetAffixSummary
+local GetCriteriaState
+local GetDeathState
+local CalculateChestTimerLimits
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
@@ -48,16 +53,24 @@ local runtimeEventsRegistered = false
 local databaseSanitized = false
 local runtimeRegistrationDeferred = false
 
-for _, eventName in ipairs(RUNTIME_EVENTS) do
-    if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-        frame:RegisterEvent(eventName)
-    end
-end
-runtimeEventsRegistered = true
-runtimeRegistrationDeferred = false
-
 local function RegisterRuntimeEvents()
-    -- Runtime events are registered at load time to avoid protected RegisterEvent calls later.
+    if runtimeEventsRegistered then
+        runtimeRegistrationDeferred = false
+        return true
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        runtimeRegistrationDeferred = true
+        return false
+    end
+
+    for _, eventName in ipairs(RUNTIME_EVENTS) do
+        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
+            frame:RegisterEvent(eventName)
+        end
+    end
+
+    runtimeEventsRegistered = true
     runtimeRegistrationDeferred = false
     return true
 end
@@ -2053,7 +2066,7 @@ local function NormalizeAffixIDs(...)
     return affixIDs
 end
 
-local function GetActiveKeystoneDetails()
+GetActiveKeystoneDetails = function()
     local level
     local affixIDs = {}
 
@@ -2082,7 +2095,7 @@ local function GetActiveKeystoneDetails()
     return level, affixIDs
 end
 
-local function GetAffixSummary(affixIDs)
+GetAffixSummary = function(affixIDs)
     if type(affixIDs) ~= "table" or #affixIDs == 0 then
         return nil
     end
@@ -2329,7 +2342,7 @@ local function ResolveEnemyForcesPercent(criteriaInfo, mapID, mapName)
     return nil
 end
 
-local function GetCriteriaState(mapID, mapName)
+GetCriteriaState = function(mapID, mapName)
     local criteriaCount = GetCriteriaCount()
     local objectives = {}
     local enemyForcesIndex
@@ -2410,7 +2423,7 @@ local function BuildObjectiveText(criteriaInfo)
     return string.format("- %s", criteriaInfo.name)
 end
 
-local function GetDeathState()
+GetDeathState = function()
     if C_ChallengeMode and C_ChallengeMode.GetDeathCount then
         local ok, deathCount, deathPenalty = pcall(C_ChallengeMode.GetDeathCount)
         if ok then
@@ -2421,7 +2434,7 @@ local function GetDeathState()
     return 0, 0
 end
 
-local function CalculateChestTimerLimits(maxTimeSeconds, affixIDs)
+CalculateChestTimerLimits = function(maxTimeSeconds, affixIDs)
     if type(maxTimeSeconds) ~= "number" or maxTimeSeconds <= 0 then
         return nil, nil
     end

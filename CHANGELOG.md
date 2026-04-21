@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Fixed a nil run-state context binding (`GetWorldElapsedSeconds`) that could error during M+ UI refresh and prevent the overlay from rendering.
+- Fixed additional nil run-state helper bindings (`GetActiveKeystoneDetails`, affix/criteria/death helpers) so context callbacks remain valid across load order.
+- Removed main-chunk runtime event registration and restored guarded runtime event wiring to prevent `Frame:RegisterEvent()` forbidden errors at addon load.
 
 ### Packaging
 - Bumped TOC version to `1.7.2`.
