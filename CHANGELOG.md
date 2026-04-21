@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.2] - 2026-04-21
+
+### Fixed
+- Fixed a nil run-state context binding (`GetWorldElapsedSeconds`) that could error during M+ UI refresh and prevent the overlay from rendering.
+
+### Packaging
+- Bumped TOC version to `1.7.2`.
+
 ## [1.7.1] - 2026-04-20
 
 ### Fixed

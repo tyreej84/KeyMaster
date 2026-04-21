@@ -13,6 +13,7 @@ local strtrim = strtrim or function(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
 local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
 local RefreshMythicUI
+local GetWorldElapsedSeconds
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
@@ -2138,7 +2139,7 @@ local function GetAffixDisplayInfo(affixID)
     return nil, nil, nil
 end
 
-local function GetWorldElapsedSeconds()
+GetWorldElapsedSeconds = function()
     if not GetWorldElapsedTime then
         return nil
     end
