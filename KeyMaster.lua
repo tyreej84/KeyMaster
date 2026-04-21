@@ -23,7 +23,6 @@ local CalculateChestTimerLimits
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 local RUNTIME_EVENTS = {
     "CHAT_MSG_ADDON",
@@ -48,35 +47,12 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_GUILD",
     "CHAT_MSG_OFFICER",
 }
-
-local runtimeEventsRegistered = false
 local databaseSanitized = false
-local runtimeRegistrationDeferred = false
 
-local function RegisterRuntimeEvents()
-    if runtimeEventsRegistered then
-        runtimeRegistrationDeferred = false
-        return true
+for _, eventName in ipairs(RUNTIME_EVENTS) do
+    if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
+        frame:RegisterEvent(eventName)
     end
-
-    if InCombatLockdown and InCombatLockdown() then
-        runtimeRegistrationDeferred = true
-        return false
-    end
-
-    for _, eventName in ipairs(RUNTIME_EVENTS) do
-        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-            local ok = pcall(frame.RegisterEvent, frame, eventName)
-            if not ok then
-                runtimeRegistrationDeferred = true
-                return false
-            end
-        end
-    end
-
-    runtimeEventsRegistered = true
-    runtimeRegistrationDeferred = false
-    return true
 end
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
@@ -1961,12 +1937,7 @@ local function RequestAbandonKeyVote()
 
     local started = false
 
-    if type(SlashCmdList) == "table" and type(SlashCmdList.ABANDON) == "function" then
-        local ok = pcall(SlashCmdList.ABANDON, "")
-        started = ok == true
-    end
-
-    if not started and C_ChallengeMode then
+    if C_ChallengeMode then
         if type(C_ChallengeMode.RequestLeaverVote) == "function" then
             local ok = pcall(C_ChallengeMode.RequestLeaverVote)
             started = ok == true
@@ -1976,15 +1947,10 @@ local function RequestAbandonKeyVote()
         end
     end
 
-    if not started and type(RunMacroText) == "function" then
-        local ok = pcall(RunMacroText, "/abandon")
-        started = ok == true
-    end
-
     if started then
         PrintLocal("Started vote to abandon the key")
     else
-        PrintLocal("Unable to start abandon vote from the button in this client build. Please type /abandon")
+        PrintLocal("Unable to start abandon vote from the button in this client build. Please type /abandon manually")
     end
 end
 
@@ -2177,14 +2143,40 @@ GetWorldElapsedSeconds = function()
         return nil
     end
 
-    local _, elapsedSeconds = GetWorldElapsedTime(1)
+    local function ReadElapsedSeconds(timerID)
+        local ok, firstValue, secondValue = pcall(GetWorldElapsedTime, timerID)
+        if not ok then
+            return nil
+        end
+
+        if type(secondValue) == "number" then
+            return secondValue
+        end
+
+        if type(firstValue) == "number" then
+            return firstValue
+        end
+
+        return nil
+    end
+
+    local elapsedSeconds = ReadElapsedSeconds(1)
     if type(elapsedSeconds) == "number" then
         return elapsedSeconds
     end
 
-    local firstValue = GetWorldElapsedTime(1)
-    if type(firstValue) == "number" then
-        return firstValue
+    if type(GetWorldElapsedTimers) == "function" then
+        local ok, timers = pcall(GetWorldElapsedTimers)
+        if ok and type(timers) == "table" then
+            for _, timerID in ipairs(timers) do
+                if type(timerID) == "number" and timerID > 0 and timerID ~= 1 then
+                    local otherElapsed = ReadElapsedSeconds(timerID)
+                    if type(otherElapsed) == "number" then
+                        return otherElapsed
+                    end
+                end
+            end
+        end
     end
 
     return nil
@@ -5138,13 +5130,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
-        RegisterRuntimeEvents()
         PerformLoginInitialization()
         return
-    end
-
-    if event == "PLAYER_REGEN_ENABLED" and runtimeRegistrationDeferred and not runtimeEventsRegistered then
-        RegisterRuntimeEvents()
     end
 
     if event == "PLAYER_ENTERING_WORLD" then

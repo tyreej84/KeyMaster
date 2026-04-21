@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.9] - 2026-04-21
+
+### Fixed
+- Removed deferred runtime event-registration retries and switched to one-time startup event wiring so KeyMaster no longer performs late `RegisterEvent` calls in taint-sensitive contexts.
+- Hardened abandon vote button handling to prefer Blizzard challenge-mode vote APIs only (`RequestLeaverVote`/`StartLeaverVote`) instead of slash/macro fallbacks that can vary by client state.
+- Improved world timer reads by probing available timer IDs before falling back, reducing brittle assumptions around timer index ordering in Retail 12.0.1.
+
+### Packaging
+- Bumped TOC version to `1.7.9`.
+
 ## [1.7.8] - 2026-04-21
 
 ### Fixed
