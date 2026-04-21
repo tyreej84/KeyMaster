@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.4] - 2026-04-21
+
+### Fixed
+- Hardened challenge-map API handling to support both tuple and table return shapes from map info lookups used by dungeon name/time-limit resolution.
+- Fixed a run-state nil-guard gap around active challenge map lookup so startup/state refresh paths do not assume `C_ChallengeMode` is always initialized.
+- Wrapped affix name and keystone auto-slot API calls with safer guards/pcalls and added combat-lockdown short-circuiting for auto-slot attempts.
+
+### Packaging
+- Bumped TOC version to `1.8.4`.
+
 ## [1.8.3] - 2026-04-21
 
 ### Changed

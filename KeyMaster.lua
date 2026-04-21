@@ -1212,9 +1212,16 @@ local function GetKeystoneMapName(mapID)
     end
 
     if C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
-        local name = C_ChallengeMode.GetMapUIInfo(mapID)
-        if type(name) == "string" and name ~= "" then
-            return name
+        local ok, result1 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+        if ok then
+            if type(result1) == "table" then
+                local name = result1.name or result1.mapName
+                if type(name) == "string" and name ~= "" then
+                    return name
+                end
+            elseif type(result1) == "string" and result1 ~= "" then
+                return result1
+            end
         end
     end
 
@@ -1226,9 +1233,22 @@ local function GetChallengeMapTimeLimit(mapID)
         return nil
     end
 
-    local ok, _, _, timeLimit = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
-    if ok and type(timeLimit) == "number" and timeLimit > 0 then
-        return timeLimit
+    local ok, result1, result2, result3, result4 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+    if not ok then
+        return nil
+    end
+
+    if type(result1) == "table" then
+        local timeLimit = result1.timeLimit or result1.timeLimitSeconds or result1.challengeTimeLimit
+        if type(timeLimit) == "number" and timeLimit > 0 then
+            return timeLimit
+        end
+    end
+
+    for _, candidate in ipairs({ result4, result3, result2 }) do
+        if type(candidate) == "number" and candidate > 0 then
+            return candidate
+        end
     end
 
     return nil
@@ -2090,8 +2110,8 @@ GetAffixSummary = function(affixIDs)
 
     if C_ChallengeMode and C_ChallengeMode.GetAffixInfo then
         for _, affixID in ipairs(affixIDs) do
-            local name = C_ChallengeMode.GetAffixInfo(affixID)
-            if type(name) == "string" and name ~= "" then
+            local ok, name = pcall(C_ChallengeMode.GetAffixInfo, affixID)
+            if ok and type(name) == "string" and name ~= "" then
                 table.insert(names, name)
             end
         end
@@ -3195,16 +3215,19 @@ end
 local function TryAutoSlotKeystone()
     if not (C_ChallengeMode and C_ChallengeMode.SlotKeystone) then return end
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemID and C_Container.PickupContainerItem) then return end
+    if InCombatLockdown and InCombatLockdown() then return end
     for _, bagID in ipairs((_G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_BAG_SLOTS) or { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }) do
         local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
         for slotIndex = 1, slotCount do
             local itemID = C_Container.GetContainerItemID(bagID, slotIndex)
             if (((_G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS) or { [180653] = true, [158923] = true, [151086] = true })[itemID]) then
-                C_Container.PickupContainerItem(bagID, slotIndex)
+                local pickupOk = pcall(C_Container.PickupContainerItem, bagID, slotIndex)
                 if CursorHasItem() then
-                    C_ChallengeMode.SlotKeystone()
+                    pcall(C_ChallengeMode.SlotKeystone)
                 end
-                return
+                if pickupOk then
+                    return
+                end
             end
         end
     end

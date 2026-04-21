@@ -54,7 +54,13 @@ function RunState.GetActiveRunState(ctx)
         return nil
     end
 
-    local mapID = C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID() or ctx.GetOwnedKeystoneMapID()
+    local mapID
+    if C_ChallengeMode and type(C_ChallengeMode.GetActiveChallengeMapID) == "function" then
+        mapID = C_ChallengeMode.GetActiveChallengeMapID()
+    end
+    if type(mapID) ~= "number" or mapID <= 0 then
+        mapID = ctx.GetOwnedKeystoneMapID()
+    end
     local mapName = ctx.GetKeystoneMapName(mapID)
     local maxTimeSeconds = ctx.GetChallengeMapTimeLimit(mapID)
     local elapsedSeconds = ctx.GetWorldElapsedSeconds() or 0

@@ -40,7 +40,15 @@ function ns.ResolveMapIDFromDungeonName(dungeonName)
         local ok, mapTable = pcall(C_ChallengeMode.GetMapTable)
         if ok and type(mapTable) == "table" then
             for _, mapID in ipairs(mapTable) do
-                local mapName = C_ChallengeMode.GetMapUIInfo(mapID)
+                local mapName
+                local mapOk, result1 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+                if mapOk then
+                    if type(result1) == "table" then
+                        mapName = result1.name or result1.mapName
+                    else
+                        mapName = result1
+                    end
+                end
                 if ns.NormalizeDungeonName(mapName) == target then
                     return tonumber(mapID) or nil
                 end
