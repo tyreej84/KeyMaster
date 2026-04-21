@@ -1956,7 +1956,12 @@ local function RequestAbandonKeyVote()
 
     local started = false
 
-    if C_ChallengeMode then
+    if type(SlashCmdList) == "table" and type(SlashCmdList.ABANDON) == "function" then
+        local ok = pcall(SlashCmdList.ABANDON, "")
+        started = ok == true
+    end
+
+    if not started and C_ChallengeMode then
         if type(C_ChallengeMode.RequestLeaverVote) == "function" then
             local ok = pcall(C_ChallengeMode.RequestLeaverVote)
             started = ok == true
@@ -1966,13 +1971,8 @@ local function RequestAbandonKeyVote()
         end
     end
 
-    if not started and type(ChatEdit_ParseText) == "function" then
-        local ok = pcall(ChatEdit_ParseText, "/abandon", DEFAULT_CHAT_FRAME)
-        started = ok == true
-    end
-
-    if not started and type(SlashCmdList) == "table" and type(SlashCmdList.ABANDON) == "function" then
-        local ok = pcall(SlashCmdList.ABANDON, "")
+    if not started and type(RunMacroText) == "function" then
+        local ok = pcall(RunMacroText, "/abandon")
         started = ok == true
     end
 
@@ -3104,6 +3104,9 @@ local function CreateMythicUI()
     abandonButton:SetScript("OnLeave", function(self)
         self:SetBackdropColor(0.06, 0.08, 0.10, 0.90)
         self:SetBackdropBorderColor(1, 1, 1, 0.16)
+    end)
+    abandonButton:SetScript("OnClick", function()
+        RequestAbandonKeyVote()
     end)
     abandonButton:Hide()
     ui.abandonButton = abandonButton
@@ -5124,7 +5127,6 @@ frame:SetScript("OnEvent", function(_, event, ...)
         local loadedAddon = ...
         if loadedAddon == addonName then
             InitializeDatabase()
-            RegisterRuntimeEvents()
             if IsLoggedIn and IsLoggedIn() then
                 PerformLoginInitialization()
             end
@@ -5135,6 +5137,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
+        RegisterRuntimeEvents()
         PerformLoginInitialization()
         return
     end

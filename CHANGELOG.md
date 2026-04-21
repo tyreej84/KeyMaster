@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.7] - 2026-04-21
+
+### Fixed
+- Fixed abandon button no-op behavior by restoring an explicit click-handler fallback (`RequestAbandonKeyVote`) while keeping secure `/abandon` macro attributes.
+- Updated abandon vote invocation order to try slash-handler execution first, then direct challenge-mode APIs, then macro fallback.
+- Moved runtime event registration back to `PLAYER_LOGIN` timing to avoid the startup forbidden path introduced by addon-load registration timing.
+
+### Packaging
+- Bumped TOC version to `1.7.7`.
+
 ## [1.7.6] - 2026-04-21
 
 ### Fixed
