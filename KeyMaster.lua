@@ -23,6 +23,7 @@ local CalculateChestTimerLimits
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
+local runtimeRegistrationFrame = CreateFrame("Frame")
 
 local RUNTIME_EVENTS = {
     "CHAT_MSG_ADDON",
@@ -48,12 +49,42 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_OFFICER",
 }
 local databaseSanitized = false
+local runtimeEventsRegistered = false
 
-for _, eventName in ipairs(RUNTIME_EVENTS) do
-    if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-        frame:RegisterEvent(eventName)
-    end
+local function IsInCombatLockdown()
+    return InCombatLockdown and InCombatLockdown() == true
 end
+
+local function RegisterRuntimeEventsNow()
+    if runtimeEventsRegistered then
+        return true
+    end
+    if IsInCombatLockdown() then
+        return false
+    end
+
+    for _, eventName in ipairs(RUNTIME_EVENTS) do
+        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
+            frame:RegisterEvent(eventName)
+        end
+    end
+
+    runtimeEventsRegistered = true
+    runtimeRegistrationFrame:SetScript("OnUpdate", nil)
+    return true
+end
+
+local function EnsureRuntimeEventsRegistered()
+    if RegisterRuntimeEventsNow() then
+        return
+    end
+
+    runtimeRegistrationFrame:SetScript("OnUpdate", function()
+        RegisterRuntimeEventsNow()
+    end)
+end
+
+EnsureRuntimeEventsRegistered()
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
 local KEYSTONE_ITEM_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS or { [180653] = true, [158923] = true, [151086] = true }
@@ -5118,6 +5149,7 @@ function PerformLoginInitialization()
     end
 
     ui.loginInitialized = true
+    EnsureRuntimeEventsRegistered()
     local db = InitializeDatabase()
     ui.ksmHideOffline = db.ui.hideOfflineGuild == true
     CreateMythicUI()
