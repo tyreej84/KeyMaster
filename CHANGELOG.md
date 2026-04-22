@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Removed runtime `RegisterEvent` calls from login initialization; runtime events now bind once at addon load to avoid recurring `Frame:RegisterEvent()` forbidden-call captures.
 - Added preferred-name store resolution for guild snapshots so short-name updates reuse existing full-name keys and stop short/full duplicate resurfacing.
 - Fixed challenge timer limit parsing to reject bogus tuple values (for example large texture/file IDs) and normalize millisecond-vs-second returns, preventing absurd completion-time displays.
+- Aligned elapsed Mythic+ timer sourcing with Blizzard tracker updates by caching `ScenarioObjectiveTracker.ChallengeModeBlock:UpdateTime` elapsed seconds and using API polling only as fallback.
 
 ### Packaging
 - Bumped TOC version to `1.8.4`.

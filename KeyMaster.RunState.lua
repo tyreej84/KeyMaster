@@ -200,6 +200,7 @@ end
 function RunState.HandleChallengeLifecycleEvent(ctx, event)
     if event == "CHALLENGE_MODE_START" then
         ctx.ui.inChallengeMode = true
+        ctx.ui.lastScenarioElapsedSeconds = 0
         ctx.ui.completedRun = nil
         ctx.ui.lastRunState = nil
         ctx.ResetDeathLog()
@@ -214,6 +215,7 @@ function RunState.HandleChallengeLifecycleEvent(ctx, event)
         ctx.SyncGroupDeathLogFromUnits()
         RunState.CaptureCompletedRunState(ctx)
         ctx.ui.inChallengeMode = false
+        ctx.ui.lastScenarioElapsedSeconds = nil
         RunState.ScheduleOwnedKeystoneObservation(ctx, true, 3)
         if C_Timer and C_Timer.After then
             C_Timer.After(2, function()
@@ -226,6 +228,7 @@ function RunState.HandleChallengeLifecycleEvent(ctx, event)
 
     if event == "CHALLENGE_MODE_RESET" then
         ctx.ui.inChallengeMode = false
+        ctx.ui.lastScenarioElapsedSeconds = nil
         ctx.ui.lastRunState = nil
         ctx.ui.completedRun = nil
         ctx.ResetDeathLog()

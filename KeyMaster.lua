@@ -48,6 +48,7 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_OFFICER",
 }
 local databaseSanitized = false
+local scenarioTimerHooked = false
 for _, eventName in ipairs(RUNTIME_EVENTS) do
     frame:RegisterEvent(eventName)
 end
@@ -871,6 +872,30 @@ local function GetCurrentExpansionMaxLevel()
     end
 
     return nil
+end
+
+local function TryHookScenarioTimerUpdate()
+    if scenarioTimerHooked then
+        return
+    end
+
+    if type(hooksecurefunc) ~= "function" then
+        return
+    end
+
+    local tracker = _G.ScenarioObjectiveTracker
+    local challengeModeBlock = tracker and tracker.ChallengeModeBlock
+    if type(challengeModeBlock) ~= "table" or type(challengeModeBlock.UpdateTime) ~= "function" then
+        return
+    end
+
+    hooksecurefunc(challengeModeBlock, "UpdateTime", function(_, elapsedTime)
+        if type(elapsedTime) == "number" and elapsedTime >= 0 and elapsedTime < 86400 then
+            ui.lastScenarioElapsedSeconds = elapsedTime
+        end
+    end)
+
+    scenarioTimerHooked = true
 end
 
 local function IsPlayerAtCurrentExpansionMaxLevel()
@@ -2314,6 +2339,10 @@ local function GetAffixDisplayInfo(affixID)
 end
 
 GetWorldElapsedSeconds = function()
+    if type(ui.lastScenarioElapsedSeconds) == "number" and ui.lastScenarioElapsedSeconds >= 0 then
+        return ui.lastScenarioElapsedSeconds
+    end
+
     if not GetWorldElapsedTime then
         return nil
     end
@@ -5277,6 +5306,7 @@ function PerformLoginInitialization()
     ui.ksmHideOffline = db.ui.hideOfflineGuild == true
     CreateMythicUI()
     RegisterSettingsPanel()
+    TryHookScenarioTimerUpdate()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         pcall(C_ChatInfo.RegisterAddonMessagePrefix, KSM_ADDON_PREFIX)
         pcall(C_ChatInfo.RegisterAddonMessagePrefix, ASTRAL_KEYS_PREFIX)
@@ -5313,6 +5343,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_ENTERING_WORLD" then
+        TryHookScenarioTimerUpdate()
         PersistOwnGuildSnapshot()
         QueueOwnSnapshotPersistRetry(2)
         QueueOwnSnapshotPersistRetry(8)
