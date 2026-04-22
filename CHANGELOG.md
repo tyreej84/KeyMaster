@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Added a max-level gate for own snapshot persistence so sub-max player characters are not written into guild/character stores.
 - Added same-short-name alias cleanup for own records so stale cross-realm variants (for example `Name-OtherRealm`) are purged when saving the active character snapshot.
 - Corrected BugGrabber issue provenance: the `Frame:RegisterEvent()` forbidden-call report was observed from `1.8.3` runtime behavior.
+- Removed remaining main-chunk runtime event registration and deferred `OnUpdate` retry wiring; runtime events are now registered once during login initialization to avoid recurring `Frame:RegisterEvent()` forbidden-call captures.
 
 ### Packaging
 - Bumped TOC version to `1.8.4`.
