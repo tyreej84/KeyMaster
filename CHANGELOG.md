@@ -2,19 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.8.5] - 2026-04-21
-
-### Fixed
-- Corrected BugGrabber issue provenance: the `Frame:RegisterEvent()` forbidden-call report was observed from `1.8.3` runtime behavior, and is now tracked as fixed in the current post-`1.8.3` event-registration path.
-
-### Packaging
-- Bumped TOC version to `1.8.5`.
-
 ## [1.8.4] - 2026-04-21
 
 ### Fixed
 - Added a max-level gate for own snapshot persistence so sub-max player characters are not written into guild/character stores.
 - Added same-short-name alias cleanup for own records so stale cross-realm variants (for example `Name-OtherRealm`) are purged when saving the active character snapshot.
+- Corrected BugGrabber issue provenance: the `Frame:RegisterEvent()` forbidden-call report was observed from `1.8.3` runtime behavior.
 
 ### Packaging
 - Bumped TOC version to `1.8.4`.
