@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Added a max-level gate for own snapshot persistence so sub-max player characters are not written into guild/character stores.
 - Added same-short-name alias cleanup for own records so stale cross-realm variants (for example `Name-OtherRealm`) are purged when saving the active character snapshot.
+- BugGrabber scope audit: confirmed the in-scope KeyMaster forbidden-call issue (`Frame:RegisterEvent()` in main chunk) is addressed by the runtime event wiring changes introduced in `1.8.2`; no additional in-scope KeyMaster BugGrabber errors were present in the latest audit.
 
 ### Packaging
 - Bumped TOC version to `1.8.4`.
