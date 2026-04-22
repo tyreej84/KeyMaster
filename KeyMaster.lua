@@ -884,6 +884,38 @@ local function GetCurrentRealmTag()
     return nil
 end
 
+local function GetCurrentExpansionMaxLevel()
+    if type(GetMaxLevelForPlayerExpansion) == "function" then
+        local level = tonumber(GetMaxLevelForPlayerExpansion())
+        if type(level) == "number" and level > 0 then
+            return level
+        end
+    end
+
+    if C_PlayerInfo and type(C_PlayerInfo.GetMaxLevelForPlayerExpansion) == "function" then
+        local level = tonumber(C_PlayerInfo.GetMaxLevelForPlayerExpansion())
+        if type(level) == "number" and level > 0 then
+            return level
+        end
+    end
+
+    local fallback = tonumber(_G.MAX_PLAYER_LEVEL)
+    if type(fallback) == "number" and fallback > 0 then
+        return fallback
+    end
+
+    return nil
+end
+
+local function IsPlayerAtCurrentExpansionMaxLevel()
+    local level = UnitLevel and UnitLevel("player")
+    local maxLevel = GetCurrentExpansionMaxLevel()
+    if type(level) ~= "number" or type(maxLevel) ~= "number" or maxLevel <= 0 then
+        return true
+    end
+    return level >= maxLevel
+end
+
 local function CollapseRepeatedRealmSuffix(name)
     if type(name) ~= "string" then
         return nil
@@ -1061,6 +1093,47 @@ local function SaveOwnCharacterData(name, data)
     candidate.name = normalized
     store[normalized] = candidate
     TrimStoreByEntryLimit(store, MAX_CHARACTER_ENTRIES)
+end
+
+local function PurgeShortNameAliasesAcrossStores(shortName, keepFullName)
+    local normalizedShort = GetNormalizedPlayerName(shortName)
+    if type(normalizedShort) ~= "string" or normalizedShort == "" then
+        return
+    end
+
+    local shortBase = normalizedShort:match("^([^-]+)")
+    if type(shortBase) ~= "string" or shortBase == "" then
+        return
+    end
+
+    local keepNormalized = GetNormalizedPlayerName(keepFullName)
+    local shortBaseLower = strlower(shortBase)
+
+    local function PurgeStore(store)
+        if type(store) ~= "table" then
+            return
+        end
+
+        for key, entry in pairs(store) do
+            local candidateName = nil
+            if type(entry) == "table" and type(entry.name) == "string" then
+                candidateName = entry.name
+            elseif type(key) == "string" then
+                candidateName = key
+            end
+
+            local normalizedCandidate = GetNormalizedPlayerName(candidateName)
+            if type(normalizedCandidate) == "string" and normalizedCandidate ~= "" then
+                local candidateBase = normalizedCandidate:match("^([^-]+)") or normalizedCandidate
+                if strlower(candidateBase) == shortBaseLower and (not keepNormalized or normalizedCandidate ~= keepNormalized) then
+                    store[key] = nil
+                end
+            end
+        end
+    end
+
+    PurgeStore(GetGuildMemberStore())
+    PurgeStore(GetOwnCharacterStore())
 end
 
 local function GetGuildMemberData(name)
@@ -1563,6 +1636,13 @@ local function PersistOwnGuildSnapshot()
 
     local canonicalFullName = GetNormalizedPlayerName(fullName) or fullName
     local canonicalShortName = GetNormalizedPlayerName(shortName) or shortName
+
+    if not IsPlayerAtCurrentExpansionMaxLevel() then
+        PurgeShortNameAliasesAcrossStores(canonicalShortName, nil)
+        return false
+    end
+
+    PurgeShortNameAliasesAcrossStores(canonicalShortName, canonicalFullName)
 
     local ownStore = GetOwnCharacterStore()
     local previousOwn = ownStore[canonicalFullName]

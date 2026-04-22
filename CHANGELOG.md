@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.4] - 2026-04-21
+
+### Fixed
+- Added a max-level gate for own snapshot persistence so sub-max player characters are not written into guild/character stores.
+- Added same-short-name alias cleanup for own records so stale cross-realm variants (for example `Name-OtherRealm`) are purged when saving the active character snapshot.
+
+### Packaging
+- Bumped TOC version to `1.8.4`.
+
 ## [1.8.3] - 2026-04-21
 
 ### Changed
