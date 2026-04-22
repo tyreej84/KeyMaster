@@ -48,20 +48,8 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_OFFICER",
 }
 local databaseSanitized = false
-local runtimeEventsRegistered = false
-
-local function RegisterRuntimeEventsOnce()
-    if runtimeEventsRegistered then
-        return
-    end
-
-    for _, eventName in ipairs(RUNTIME_EVENTS) do
-        if not (frame.IsEventRegistered and frame:IsEventRegistered(eventName)) then
-            frame:RegisterEvent(eventName)
-        end
-    end
-
-    runtimeEventsRegistered = true
+for _, eventName in ipairs(RUNTIME_EVENTS) do
+    frame:RegisterEvent(eventName)
 end
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
@@ -889,9 +877,54 @@ local function IsPlayerAtCurrentExpansionMaxLevel()
     local level = UnitLevel and UnitLevel("player")
     local maxLevel = GetCurrentExpansionMaxLevel()
     if type(level) ~= "number" or type(maxLevel) ~= "number" or maxLevel <= 0 then
-        return true
+        return false
     end
     return level >= maxLevel
+end
+
+local function ResolvePreferredStoreName(store, normalizedName)
+    if type(store) ~= "table" or type(normalizedName) ~= "string" or normalizedName == "" then
+        return normalizedName
+    end
+
+    if normalizedName:find("%-", 1, true) then
+        return normalizedName
+    end
+
+    local shortBase = normalizedName:match("^([^-]+)")
+    if type(shortBase) ~= "string" or shortBase == "" then
+        return normalizedName
+    end
+
+    local shortBaseLower = strlower(shortBase)
+    local preferredName = nil
+    local preferredUpdatedAt = -1
+
+    for key, entry in pairs(store) do
+        local candidateName = nil
+        if type(entry) == "table" and type(entry.name) == "string" then
+            candidateName = entry.name
+        elseif type(key) == "string" then
+            candidateName = key
+        end
+
+        local normalizedCandidate = GetNormalizedPlayerName(candidateName)
+        if type(normalizedCandidate) == "string" and normalizedCandidate ~= "" and normalizedCandidate:find("%-", 1, true) then
+            local candidateBase = normalizedCandidate:match("^([^-]+)") or normalizedCandidate
+            if strlower(candidateBase) == shortBaseLower then
+                local updatedAt = 0
+                if type(entry) == "table" then
+                    updatedAt = tonumber(entry.updatedAt) or 0
+                end
+                if preferredName == nil or updatedAt >= preferredUpdatedAt then
+                    preferredName = normalizedCandidate
+                    preferredUpdatedAt = updatedAt
+                end
+            end
+        end
+    end
+
+    return preferredName or normalizedName
 end
 
 local function CollapseRepeatedRealmSuffix(name)
@@ -1034,6 +1067,7 @@ local function SaveGuildMemberData(name, data)
     end
 
     local store = GetGuildMemberStore()
+    normalized = ResolvePreferredStoreName(store, normalized)
     local now = GetServerTime and GetServerTime() or time()
     local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
     if not next(candidate) then
@@ -1047,6 +1081,10 @@ local function SaveGuildMemberData(name, data)
     candidate.updatedAt = now
     candidate.name = normalized
     store[normalized] = candidate
+    local shortName = normalized:match("^([^-]+)")
+    if shortName and shortName ~= normalized then
+        store[shortName] = nil
+    end
     TrimStoreByEntryLimit(store, MAX_GUILD_MEMBER_ENTRIES)
 end
 
@@ -5207,7 +5245,6 @@ function PerformLoginInitialization()
     end
 
     ui.loginInitialized = true
-    RegisterRuntimeEventsOnce()
     local db = InitializeDatabase()
     ui.ksmHideOffline = db.ui.hideOfflineGuild == true
     CreateMythicUI()
