@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Corrected BugGrabber issue provenance: the `Frame:RegisterEvent()` forbidden-call report was observed from `1.8.3` runtime behavior.
 - Removed runtime `RegisterEvent` calls from login initialization; runtime events now bind once at addon load to avoid recurring `Frame:RegisterEvent()` forbidden-call captures.
 - Added preferred-name store resolution for guild snapshots so short-name updates reuse existing full-name keys and stop short/full duplicate resurfacing.
+- Fixed challenge timer limit parsing to reject bogus tuple values (for example large texture/file IDs) and normalize millisecond-vs-second returns, preventing absurd completion-time displays.
 
 ### Packaging
 - Bumped TOC version to `1.8.4`.

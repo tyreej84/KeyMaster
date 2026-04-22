@@ -1353,21 +1353,49 @@ local function GetChallengeMapTimeLimit(mapID)
         return nil
     end
 
+    local function NormalizeTimeLimitSeconds(value)
+        if type(value) ~= "number" or value <= 0 then
+            return nil
+        end
+
+        -- Retail M+ timers are expected in a narrow range (roughly 15-60 minutes).
+        -- Reject tuple fields like texture IDs and convert millisecond-form values safely.
+        local seconds = value
+        if seconds > 7200 then
+            if seconds <= 7200000 then
+                seconds = seconds / 1000
+            else
+                return nil
+            end
+        end
+
+        if seconds < 600 or seconds > 7200 then
+            return nil
+        end
+
+        return seconds
+    end
+
     local ok, result1, result2, result3, result4 = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
     if not ok then
         return nil
     end
 
     if type(result1) == "table" then
-        local timeLimit = result1.timeLimit or result1.timeLimitSeconds or result1.challengeTimeLimit
-        if type(timeLimit) == "number" and timeLimit > 0 then
+        local timeLimit = NormalizeTimeLimitSeconds(result1.timeLimit)
+            or NormalizeTimeLimitSeconds(result1.timeLimitSeconds)
+            or NormalizeTimeLimitSeconds(result1.timeLimitMS)
+            or NormalizeTimeLimitSeconds(result1.timeLimitMillis)
+            or NormalizeTimeLimitSeconds(result1.challengeTimeLimit)
+        if type(timeLimit) == "number" then
             return timeLimit
         end
     end
 
-    for _, candidate in ipairs({ result4, result3, result2 }) do
-        if type(candidate) == "number" and candidate > 0 then
-            return candidate
+    for _, candidate in ipairs({ result2, result3, result4 }) do
+        local timeLimit = NormalizeTimeLimitSeconds(candidate)
+        if type(timeLimit) == "number" then
+            return timeLimit
         end
     end
 
