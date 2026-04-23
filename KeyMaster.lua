@@ -5,10 +5,7 @@ local KMNS = _G.KeyMasterNS or {}
 local floor = math.floor
 local max = math.max
 local min = math.min
-local band = bit and bit.band or bit32 and bit32.band
-local strfind = string.find
 local strlower = string.lower
-local strmatch = string.match
 local strtrim = strtrim or function(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
 local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
@@ -19,6 +16,7 @@ local GetAffixSummary
 local GetCriteriaState
 local GetDeathState
 local CalculateChestTimerLimits
+local GetNormalizedPlayerName
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
@@ -49,9 +47,18 @@ local RUNTIME_EVENTS = {
 }
 local databaseSanitized = false
 local scenarioTimerHooked = false
-for _, eventName in ipairs(RUNTIME_EVENTS) do
-    frame:RegisterEvent(eventName)
-end
+    local runtimeEventsRegistered = false
+
+    local function RegisterRuntimeEvents()
+        if runtimeEventsRegistered then
+            return
+        end
+
+        for _, eventName in ipairs(RUNTIME_EVENTS) do
+            frame:RegisterEvent(eventName)
+        end
+        runtimeEventsRegistered = true
+    end
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
 local KEYSTONE_ITEM_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS or { [180653] = true, [158923] = true, [151086] = true }
@@ -90,7 +97,6 @@ local DEFAULT_DB = _G.KeyMasterNS and _G.KeyMasterNS.DEFAULT_DB or {
     characters = {},
 }
 
-local lastMismatchToastAt = 0
 local ui = {
     objectiveLines = {},
     lastRefreshAt = 0,
@@ -179,6 +185,25 @@ local function IsCombatLockdownActive()
     return InCombatLockdown and InCombatLockdown() == true
 end
 
+local function IsChatSendPathSecure()
+    if type(issecurevariable) ~= "function" then
+        return true
+    end
+
+    local secureGlobal = issecurevariable("SendChatMessage")
+    local secureCAPI = issecurevariable(C_ChatInfo, "SendChatMessage")
+    return secureGlobal == true and secureCAPI == true
+end
+
+local function TrySendChatMessage(message, chatType)
+    if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.SendChatMessage) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(C_ChatInfo.SendChatMessage, message, chatType)
+    return ok == true
+end
+
 local function QueueDeferredChatMessage(message, chatType)
     if type(message) ~= "string" or message == "" or type(chatType) ~= "string" or chatType == "" then
         return
@@ -201,16 +226,21 @@ local function QueueDeferredChatMessage(message, chatType)
 end
 
 local function SendOrQueueChatMessage(message, chatType)
-    if IsCombatLockdownActive() then
+    if IsCombatLockdownActive() or not IsChatSendPathSecure() then
         QueueDeferredChatMessage(message, chatType)
         return false
     end
 
-    return pcall(SendChatMessage, message, chatType)
+    local ok = TrySendChatMessage(message, chatType)
+    if not ok then
+        QueueDeferredChatMessage(message, chatType)
+    end
+
+    return ok
 end
 
 local function FlushDeferredChatMessages()
-    if IsCombatLockdownActive() then
+    if IsCombatLockdownActive() or not IsChatSendPathSecure() then
         return
     end
 
@@ -219,12 +249,17 @@ local function FlushDeferredChatMessages()
         return
     end
 
-    ui.deferredChatMessages = {}
+    local remaining = {}
     for _, entry in ipairs(queue) do
         if type(entry) == "table" and type(entry.message) == "string" and entry.message ~= "" and type(entry.chatType) == "string" and entry.chatType ~= "" then
-            pcall(SendChatMessage, entry.message, entry.chatType)
+            local ok = TrySendChatMessage(entry.message, entry.chatType)
+            if not ok then
+                table.insert(remaining, entry)
+            end
         end
     end
+
+    ui.deferredChatMessages = remaining
 end
 
 local function ResetDeathLog()
@@ -342,11 +377,12 @@ local function IsTrackedGroupDeath(destGUID, destFlags)
         return false
     end
 
-    if band and COMBATLOG_OBJECT_TYPE_PLAYER and COMBATLOG_OBJECT_AFFILIATION_MINE and COMBATLOG_OBJECT_AFFILIATION_PARTY and COMBATLOG_OBJECT_AFFILIATION_RAID then
-        local isPlayer = band(destFlags, COMBATLOG_OBJECT_TYPE_PLAYER) > 0
-        local isMine = band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0
-        local isParty = band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
-        local isRaid = band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
+    local bitBand = (bit and bit.band) or (bit32 and bit32.band)
+    if bitBand and COMBATLOG_OBJECT_TYPE_PLAYER and COMBATLOG_OBJECT_AFFILIATION_MINE and COMBATLOG_OBJECT_AFFILIATION_PARTY and COMBATLOG_OBJECT_AFFILIATION_RAID then
+        local isPlayer = bitBand(destFlags, COMBATLOG_OBJECT_TYPE_PLAYER) > 0
+        local isMine = bitBand(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0
+        local isParty = bitBand(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
+        local isRaid = bitBand(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
         return isPlayer and (isMine or isParty or isRaid)
     end
 
@@ -952,36 +988,6 @@ local function ResolvePreferredStoreName(store, normalizedName)
     return preferredName or normalizedName
 end
 
-local function CollapseRepeatedRealmSuffix(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    -- Defensive cap: malformed names can explode into repeated realm chains and stall the UI.
-    if #name > 128 then
-        name = name:sub(1, 128)
-    end
-
-    local baseName, realmSuffix = name:match("^([^-]+)%-(.+)$")
-    if not baseName or not realmSuffix then
-        return name
-    end
-
-    local normalizedRealmSuffix = realmSuffix:gsub("[%s%-]+", "")
-    if normalizedRealmSuffix == "" then
-        return baseName
-    end
-
-    -- Some inputs can include display-style realms with a hyphen (e.g. Earthen-Ring).
-    -- Normalize the full suffix so we keep EarthenRing instead of truncating to Earthen.
-    local canonicalRealm = NormalizeRealmTag(normalizedRealmSuffix)
-    if not canonicalRealm then
-        return string.format("%s-%s", baseName, normalizedRealmSuffix)
-    end
-
-    return string.format("%s-%s", baseName, canonicalRealm)
-end
-
 local function NormalizeLoosePlayerName(name)
     if type(name) ~= "string" then
         return nil
@@ -1020,7 +1026,7 @@ local function NormalizeLoosePlayerName(name)
     return cleaned
 end
 
-local function GetNormalizedPlayerName(name)
+GetNormalizedPlayerName = function(name)
     local trimmed = NormalizeLoosePlayerName(name)
     if type(trimmed) ~= "string" or trimmed == "" then
         return nil
@@ -1184,6 +1190,7 @@ local function GetGuildMemberData(name)
     end
 
     local store = GetGuildMemberStore()
+    normalized = ResolvePreferredStoreName(store, normalized)
     local entry = store[normalized]
     if entry then
         return entry
@@ -1441,36 +1448,12 @@ local function FormatDungeonLabel(mapID)
 end
 
 
-local function ShowLocalToast(message)
-    if not message or message == "" then
-        return
-    end
-
-    if UIErrorsFrame and UIErrorsFrame.AddMessage then
-        UIErrorsFrame:AddMessage(message, 1.0, 0.1, 0.1, 1.0)
-    end
-end
-
 local function PrintLocal(message)
     if not message or message == "" then
         return
     end
 
     print(string.format("%s %s", REPLY_PREFIX, message))
-end
-
-local function ShowMismatchToast(ownedMapID, receptacleMapID)
-    local now = GetTime()
-    if (now - lastMismatchToastAt) < ((_G.KeyMasterNS and _G.KeyMasterNS.MISMATCH_TOAST_COOLDOWN_SECONDS) or 2) then
-        return
-    end
-
-    lastMismatchToastAt = now
-
-    local ownedName = FormatDungeonLabel(ownedMapID)
-    local receptacleName = FormatDungeonLabel(receptacleMapID)
-    local message = string.format("Key mismatch (%s vs %s)", ownedName, receptacleName)
-    ShowLocalToast(string.format("%s %s", REPLY_PREFIX, message))
 end
 
 local function GetOwnedKeystoneLink()
@@ -2771,16 +2754,6 @@ local function SetMythicUIEnabled(isEnabled)
     RefreshMythicUI()
 end
 
-local function EnsureHiddenTrackerFrame()
-    if ui.hiddenTrackerFrame then
-        return ui.hiddenTrackerFrame
-    end
-
-    ui.hiddenTrackerFrame = CreateFrame("Frame", nil, UIParent)
-    ui.hiddenTrackerFrame:Hide()
-    return ui.hiddenTrackerFrame
-end
-
 local function UpdateBlizzardTrackerVisibility(shouldSuppress)
     local suppress = shouldSuppress == true
 
@@ -3524,28 +3497,6 @@ local function IsPortalSpellKnown(spellID)
     return false
 end
 
-local function GetPortalSecureSpellToken(spellID)
-    if type(spellID) ~= "number" or spellID <= 0 then
-        return nil
-    end
-
-    if type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function" then
-        local ok, name = pcall(C_Spell.GetSpellName, spellID)
-        if ok and type(name) == "string" and name ~= "" then
-            return name
-        end
-    end
-
-    if GetSpellInfo then
-        local name = GetSpellInfo(spellID)
-        if type(name) == "string" and name ~= "" then
-            return name
-        end
-    end
-
-    return string.format("spell:%d", spellID)
-end
-
 local function TryCastPortalSpell(spellID)
     -- Deprecated on purpose: portal casts are bound through SecureActionButtonTemplate.
     -- Keeping this function as a non-casting guard avoids accidental protected calls.
@@ -3733,7 +3684,7 @@ local function ResolveBestScore(result1, result2)
         for key, entry in pairs(value) do
             if type(entry) == "number" then
                 local keyName = type(key) == "string" and strlower(key) or ""
-                if keyName ~= "" and (strfind(keyName, "score", 1, true) or strfind(keyName, "rating", 1, true)) then
+                if keyName ~= "" and (string.find(keyName, "score", 1, true) or string.find(keyName, "rating", 1, true)) then
                     if entry > 0 and (not bestScore or entry > bestScore) then
                         bestScore = entry
                     end
@@ -3836,7 +3787,7 @@ local function GetBestSeasonRunForMapFromHistory(mapID)
             for key, value in pairs(run) do
                 if type(value) == "number" and type(key) == "string" then
                     local keyName = strlower(key)
-                    if (strfind(keyName, "score", 1, true) or strfind(keyName, "rating", 1, true)) and value > 0 then
+                    if (string.find(keyName, "score", 1, true) or string.find(keyName, "rating", 1, true)) and value > 0 then
                         score = value
                         break
                     end
@@ -4085,30 +4036,6 @@ local function TryGetUnitMythicScore(unitToken)
     end
 
     return nil
-end
-
-local function TryGetBestSeasonRunForIdentifier(identifier)
-    if not (identifier and C_MythicPlus and C_MythicPlus.GetSeasonBestForMap and C_ChallengeMode and C_ChallengeMode.GetMapTable) then
-        return nil
-    end
-
-    local okMaps, maps = pcall(C_ChallengeMode.GetMapTable)
-    if not okMaps or type(maps) ~= "table" then
-        return nil
-    end
-
-    local bestRun
-    for _, mapID in ipairs(maps) do
-        local ok, result1, result2 = pcall(C_MythicPlus.GetSeasonBestForMap, mapID, identifier)
-        if ok then
-            local level = ResolveBestLevel(result1, result2)
-            if type(level) == "number" and (not bestRun or level > bestRun.level) then
-                bestRun = { level = level, mapID = mapID }
-            end
-        end
-    end
-
-    return bestRun
 end
 
 local function EnsureKSMDataLine(pool, parent, index)
@@ -4502,51 +4429,30 @@ local function SetKSMActiveTab(tabName)
     end
 end
 
-local function RefreshKSMMainTab()
-    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
-    if ksmModule and ksmModule.RefreshMainTab then
-        ksmModule.RefreshMainTab(BuildKSMContext())
-    end
-end
-
-local function RefreshKSMPartyTab()
-    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
-    if ksmModule and ksmModule.RefreshPartyTab then
-        ksmModule.RefreshPartyTab(BuildKSMContext())
-    end
-end
-
-local function RefreshKSMGuildTab()
-    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
-    if ksmModule and ksmModule.RefreshGuildTab then
-        ksmModule.RefreshGuildTab(BuildKSMContext())
-    end
-end
-
-local function RefreshKSMRecentsTab()
-    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
-    if ksmModule and ksmModule.RefreshRecentsTab then
-        ksmModule.RefreshRecentsTab(BuildKSMContext())
-    end
-end
-
-local function RefreshKSMWarbandTab()
-    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
-    if ksmModule and ksmModule.RefreshWarbandTab then
-        ksmModule.RefreshWarbandTab(BuildKSMContext())
-    end
-end
-
 function RefreshKSMWindow()
     if not ui.ksmFrame then
         return
     end
 
-    RefreshKSMMainTab()
-    RefreshKSMPartyTab()
-    RefreshKSMGuildTab()
-    RefreshKSMRecentsTab()
-    RefreshKSMWarbandTab()
+    local ksmModule = _G.KeyMasterNS and _G.KeyMasterNS.KSM
+    if not ksmModule then
+        return
+    end
+
+    local context = BuildKSMContext()
+    local refreshers = {
+        "RefreshMainTab",
+        "RefreshPartyTab",
+        "RefreshGuildTab",
+        "RefreshRecentsTab",
+        "RefreshWarbandTab",
+    }
+    for _, methodName in ipairs(refreshers) do
+        local method = ksmModule[methodName]
+        if method then
+            method(context)
+        end
+    end
 end
 
 function RefreshKSMWindowIfVisible()
@@ -5279,7 +5185,7 @@ SlashCmdList.KEYMASTER = function(message)
         return
     end
 
-    local scaleValue = strmatch(command, "^scale%s+([%d%.]+)$")
+    local scaleValue = string.match(command, "^scale%s+([%d%.]+)$")
     if scaleValue then
         local numericScale = tonumber(scaleValue)
         if numericScale and numericScale >= 0.7 and numericScale <= 1.5 then
@@ -5302,6 +5208,7 @@ function PerformLoginInitialization()
     end
 
     ui.loginInitialized = true
+    RegisterRuntimeEvents()
     local db = InitializeDatabase()
     ui.ksmHideOffline = db.ui.hideOfflineGuild == true
     CreateMythicUI()

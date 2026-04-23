@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.7] - 2026-04-23
+
+### Fixed
+- Fixed Party tab key resolution for group members whose cached guild records are stored under full cross-realm names while the live unit only resolves to a short name. Guild cache reads now reuse preferred-name resolution so entries like `Name` correctly resolve stored data like `Name-Realm`.
+
+### Packaging
+- Bumped TOC version to `1.8.7`.
+- Refreshed `Releases/1.8.7` payload and archive with the current runtime addon files.
+
+## [1.8.6] - 2026-04-22
+
+### Fixed
+- Fixed `ResolvePreferredStoreName` nil-call crash (`KeyMaster.lua:933`) by forward-declaring `GetNormalizedPlayerName` so early-scope calls bind to the local helper instead of global nil.
+- Removed dead local declarations discovered during BugGrabber follow-up cleanup (`lastMismatchToastAt`, `ShowLocalToast`) while preserving runtime behavior.
+
+### Packaging
+- Bumped TOC version to `1.8.6`.
+- Refreshed `Releases/1.8.6` payload and archive with the current runtime addon files.
+
+## [1.8.5] - 2026-04-22
+
+### Fixed
+- Resolved Lua compiler error "main function has more than 200 local variables" that prevented KeyMaster from loading. Inlined three rarely-used stdlib aliases (`band`, `strfind`, `strmatch`) to bring the top-level local count back within Lua's 200-variable limit.
+- Fixed `ResolvePreferredStoreName` nil-call crash (`KeyMaster.lua:933`) by forward-declaring `GetNormalizedPlayerName` so early-scope calls bind to the local helper instead of global nil.
+- Reduced top-level local pressure to create expansion headroom by collapsing five single-use KSM refresh wrapper functions into one table-driven refresh loop in `RefreshKSMWindow`.
+- Removed five unreferenced local helper functions and two additional dead local declarations discovered during cleanup (`CollapseRepeatedRealmSuffix`, `ShowMismatchToast`, `EnsureHiddenTrackerFrame`, `GetPortalSecureSpellToken`, `TryGetBestSeasonRunForIdentifier`, `lastMismatchToastAt`, `ShowLocalToast`).
+- Lowered `KeyMaster.lua` top-level local declaration count from `200` to `188`.
+
+### Packaging
+- Bumped TOC version to `1.8.5`.
+- Refreshed `Releases/1.8.5` payload and archive with the current runtime addon files.
+
 ## [1.8.4] - 2026-04-21
 
 ### Fixed
