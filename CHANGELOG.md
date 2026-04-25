@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.8] - 2026-04-25
+
+### Fixed
+- Hardened runtime event registration for 12.0.5 taint-heavy sessions by routing each event bind through a guarded safe-register path and failing closed per-event instead of issuing raw `frame:RegisterEvent` calls.
+- Added a recovery registration attempt on `PLAYER_ENTERING_WORLD` when runtime events were not fully registered during earlier startup timing.
+- Improved Party/Guild data convergence by aligning Party tab cache resolution with alias-aware own-store fallback and strengthening group-member score fallback behavior.
+
+### Packaging
+- Bumped TOC version to `1.8.8`.
+- Refreshed `Releases/1.8.8` payload and archive with the current runtime addon files.
+
 ## [1.8.7] - 2026-04-23
 
 ### Fixed
