@@ -2,8 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.8.8] - 2026-04-25
+## [1.8.9] - 2026-04-25
 
+### Fixed
+- Removed stale Horde-specific portal spell entries (Siege of Boralus and The MOTHERLODE!!) from the season portal configuration. These dungeons are not in the current Midnight Season 2 M+ pool, and their presence caused Siege of Boralus to appear in the Season Portals display for Horde players while Windrunner Spire was incorrectly pushed out of the visible tile set.
+
+## [1.8.8] - 2026-04-25
 ### Fixed
 - Hardened runtime event registration for 12.0.5 taint-heavy sessions by routing each event bind through a guarded safe-register path and failing closed per-event instead of issuing raw `frame:RegisterEvent` calls.
 - Added a recovery registration attempt on `PLAYER_ENTERING_WORLD` when runtime events were not fully registered during earlier startup timing.
