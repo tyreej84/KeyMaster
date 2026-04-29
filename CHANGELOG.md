@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-04-29
+
+### Fixed
+- Hardened startup bootstrap event registration by routing initial `ADDON_LOADED` and `PLAYER_LOGIN` binds through the guarded safe-register path, avoiding direct `frame:RegisterEvent` calls in taint-sensitive sessions.
+- Hardened chat command fallback parsing with a guarded normalization path so unreadable/secret payloads fail closed instead of attempting direct string normalization.
+- Tightened chat payload readability checks to rely on guarded access/type checks before command parsing.
+
+### Packaging
+- Bumped TOC version to `1.9.0`.
+- Refreshed `Releases/1.9.0` payload and archive with the current runtime addon files.
+
 ## [1.8.9] - 2026-04-25
 
 ### Fixed

@@ -212,10 +212,6 @@ function ns.CanReadChatPayload(message)
         return false
     end
 
-    if message == nil then
-        return false
-    end
-
     if type(canaccessvalue) == "function" then
         local ok, canRead = pcall(canaccessvalue, message)
         if not ok or canRead ~= true then

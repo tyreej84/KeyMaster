@@ -19,8 +19,11 @@ local CalculateChestTimerLimits
 local GetNormalizedPlayerName
 
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-frame:RegisterEvent("PLAYER_LOGIN")
+
+local BOOTSTRAP_EVENTS = {
+    "ADDON_LOADED",
+    "PLAYER_LOGIN",
+}
 
 local RUNTIME_EVENTS = {
     "CHAT_MSG_ADDON",
@@ -83,6 +86,14 @@ local function RegisterRuntimeEventsOnce()
     runtimeEventsRegistered = true
     return true
 end
+
+local function RegisterBootstrapEvents()
+    for _, eventName in ipairs(BOOTSTRAP_EVENTS) do
+        SafeRegisterFrameEvent(eventName)
+    end
+end
+
+RegisterBootstrapEvents()
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
 local KEYSTONE_ITEM_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS or { [180653] = true, [158923] = true, [151086] = true }

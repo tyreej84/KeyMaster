@@ -62,9 +62,14 @@ function Chat.ExtractCommandWithFallback(ctx, message)
         return nil
     end
 
-    local normalized = ctx.strtrim(ctx.strlower(message))
-        :gsub("|c%x%x%x%x%x%x%x%x", "")
-        :gsub("|r", "")
+    local ok, normalized = pcall(function(rawMessage)
+        return ctx.strtrim(ctx.strlower(rawMessage))
+            :gsub("|c%x%x%x%x%x%x%x%x", "")
+            :gsub("|r", "")
+    end, message)
+    if not ok or type(normalized) ~= "string" or normalized == "" then
+        return nil
+    end
 
     local parsed = normalized:match("^(![%a]+)") or normalized:match("%s(![%a]+)")
     if type(parsed) ~= "string" then
