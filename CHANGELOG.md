@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.5] - 2026-04-30
+
+### Packaging
+- Bumped TOC version to `1.9.5`.
+- Established `1.9.5` as the active testing baseline for SavedVariables persistence fixes.
+
 ## [1.9.4] - 2026-04-30
 
 ### Fixed
