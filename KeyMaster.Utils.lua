@@ -11,6 +11,26 @@ local function trim(s)
     return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
+local function IsReadableStringValue(value)
+    if type(value) ~= "string" then
+        return false
+    end
+
+    if type(canaccessvalue) == "function" then
+        local ok, canRead = pcall(canaccessvalue, value)
+        if not ok or canRead ~= true then
+            return false
+        end
+    end
+
+    local ok, length = pcall(string.len, value)
+    if not ok then
+        return false
+    end
+
+    return type(length) == "number" and length > 0
+end
+
 function ns.NormalizeDungeonName(name)
     if type(name) ~= "string" then
         return nil
@@ -60,71 +80,79 @@ function ns.ResolveMapIDFromDungeonName(dungeonName)
 end
 
 function ns.ParseKeystoneFromMessage(message)
-    if type(message) ~= "string" or message == "" then
+    if not IsReadableStringValue(message) then
         return nil, nil
     end
 
-    local linkData = message:match("|Hkeystone:([^|]+)|h")
-    if type(linkData) == "string" and linkData ~= "" then
-        local _, mapIDText, keyLevelText = linkData:match("^(%d+):(%d+):(%d+)")
-        local mapID = tonumber(mapIDText) or 0
-        local keyLevel = tonumber(keyLevelText) or 0
-        if mapID > 0 and keyLevel > 0 then
-            return mapID, keyLevel
-        end
-    end
-
-    local dungeonName, keyLevelText = message:match("%[Keystone:%s*(.-)%s*%((%d+)%)%]")
-    if type(dungeonName) == "string" and type(keyLevelText) == "string" then
-        local keyLevel = tonumber(keyLevelText) or 0
-        local mapID = ns.ResolveMapIDFromDungeonName(dungeonName) or 0
-        if mapID > 0 and keyLevel > 0 then
-            return mapID, keyLevel
-        end
-    end
-
-    -- Generic fallback for addon/user-facing link text variants.
-    local genericName, genericLevelText = message:match("%[([^%[%]]-)%s*%(([%+]?%d+)%)%]")
-    if type(genericName) == "string" and type(genericLevelText) == "string" then
-        local normalizedName = trim(genericName)
-        normalizedName = normalizedName:gsub("^[Kk]eystone:%s*", "")
-        normalizedName = normalizedName:gsub("^[Mm]ythic%s+[Kk]eystone:%s*", "")
-        normalizedName = trim(normalizedName)
-
-        local keyLevel = tonumber((genericLevelText:gsub("^%+", ""))) or 0
-        local mapID = ns.ResolveMapIDFromDungeonName(normalizedName) or 0
-        if mapID > 0 and keyLevel > 0 then
-            return mapID, keyLevel
-        end
-    end
-
-    local plusName, plusLevelText = message:match("%[([^%[%]]-)%s*%+(%d+)%]")
-    if type(plusName) == "string" and type(plusLevelText) == "string" then
-        local normalizedName = trim(plusName)
-        normalizedName = normalizedName:gsub("^[Kk]eystone:%s*", "")
-        normalizedName = normalizedName:gsub("^[Mm]ythic%s+[Kk]eystone:%s*", "")
-        normalizedName = trim(normalizedName)
-
-        local keyLevel = tonumber(plusLevelText) or 0
-        local mapID = ns.ResolveMapIDFromDungeonName(normalizedName) or 0
-        if mapID > 0 and keyLevel > 0 then
-            return mapID, keyLevel
-        end
-    end
-
-    local lowerMessage = string.lower(message)
-    if lowerMessage:find("astral keys", 1, true) or lowerMessage:find("astralkeys", 1, true) then
-        local astralDungeonName, astralKeyLevelText = message:match("%[([^%[%]]-)%s*%((%d+)%)%]")
-        if type(astralDungeonName) == "string" and type(astralKeyLevelText) == "string" then
-            local keyLevel = tonumber(astralKeyLevelText) or 0
-            local mapID = ns.ResolveMapIDFromDungeonName(astralDungeonName) or 0
+    local ok, parsedMapID, parsedLevel = pcall(function(rawMessage)
+        local linkData = rawMessage:match("|Hkeystone:([^|]+)|h")
+        if type(linkData) == "string" and linkData ~= "" then
+            local _, mapIDText, keyLevelText = linkData:match("^(%d+):(%d+):(%d+)")
+            local mapID = tonumber(mapIDText) or 0
+            local keyLevel = tonumber(keyLevelText) or 0
             if mapID > 0 and keyLevel > 0 then
                 return mapID, keyLevel
             end
         end
+
+        local dungeonName, keyLevelText = rawMessage:match("%[Keystone:%s*(.-)%s*%((%d+)%)%]")
+        if type(dungeonName) == "string" and type(keyLevelText) == "string" then
+            local keyLevel = tonumber(keyLevelText) or 0
+            local mapID = ns.ResolveMapIDFromDungeonName(dungeonName) or 0
+            if mapID > 0 and keyLevel > 0 then
+                return mapID, keyLevel
+            end
+        end
+
+        -- Generic fallback for addon/user-facing link text variants.
+        local genericName, genericLevelText = rawMessage:match("%[([^%[%]]-)%s*%(([%+]?%d+)%)%]")
+        if type(genericName) == "string" and type(genericLevelText) == "string" then
+            local normalizedName = trim(genericName)
+            normalizedName = normalizedName:gsub("^[Kk]eystone:%s*", "")
+            normalizedName = normalizedName:gsub("^[Mm]ythic%s+[Kk]eystone:%s*", "")
+            normalizedName = trim(normalizedName)
+
+            local keyLevel = tonumber((genericLevelText:gsub("^%+", ""))) or 0
+            local mapID = ns.ResolveMapIDFromDungeonName(normalizedName) or 0
+            if mapID > 0 and keyLevel > 0 then
+                return mapID, keyLevel
+            end
+        end
+
+        local plusName, plusLevelText = rawMessage:match("%[([^%[%]]-)%s*%+(%d+)%]")
+        if type(plusName) == "string" and type(plusLevelText) == "string" then
+            local normalizedName = trim(plusName)
+            normalizedName = normalizedName:gsub("^[Kk]eystone:%s*", "")
+            normalizedName = normalizedName:gsub("^[Mm]ythic%s+[Kk]eystone:%s*", "")
+            normalizedName = trim(normalizedName)
+
+            local keyLevel = tonumber(plusLevelText) or 0
+            local mapID = ns.ResolveMapIDFromDungeonName(normalizedName) or 0
+            if mapID > 0 and keyLevel > 0 then
+                return mapID, keyLevel
+            end
+        end
+
+        local lowerMessage = string.lower(rawMessage)
+        if lowerMessage:find("astral keys", 1, true) or lowerMessage:find("astralkeys", 1, true) then
+            local astralDungeonName, astralKeyLevelText = rawMessage:match("%[([^%[%]]-)%s*%((%d+)%)%]")
+            if type(astralDungeonName) == "string" and type(astralKeyLevelText) == "string" then
+                local keyLevel = tonumber(astralKeyLevelText) or 0
+                local mapID = ns.ResolveMapIDFromDungeonName(astralDungeonName) or 0
+                if mapID > 0 and keyLevel > 0 then
+                    return mapID, keyLevel
+                end
+            end
+        end
+
+        return nil, nil
+    end, message)
+
+    if not ok then
+        return nil, nil
     end
 
-    return nil, nil
+    return parsedMapID, parsedLevel
 end
 
 function ns.FormatSeconds(seconds)
@@ -212,21 +240,5 @@ function ns.CanReadChatPayload(message)
         return false
     end
 
-    if type(canaccessvalue) == "function" then
-        local ok, canRead = pcall(canaccessvalue, message)
-        if not ok or canRead ~= true then
-            return false
-        end
-    end
-
-    if type(message) ~= "string" then
-        return false
-    end
-
-    local ok, length = pcall(string.len, message)
-    if not ok then
-        return false
-    end
-
-    return type(length) == "number" and length > 0
+    return IsReadableStringValue(message)
 end

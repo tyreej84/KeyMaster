@@ -28,7 +28,11 @@ function Chat.BuildReplyForCommand(ctx, command)
 end
 
 function Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, message, sender)
-    if type(message) ~= "string" or type(sender) ~= "string" then
+    if type(sender) ~= "string" then
+        return
+    end
+
+    if ctx.CanReadChatPayload and not ctx.CanReadChatPayload(message) then
         return
     end
 
@@ -133,9 +137,12 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
 
     local normalizedMessage = message
 
-    Chat.UpdateGuildMemberFromChatKeystoneLink(ctx, normalizedMessage, sender)
+    pcall(Chat.UpdateGuildMemberFromChatKeystoneLink, ctx, normalizedMessage, sender)
 
-    local command = Chat.ExtractCommandWithFallback(ctx, normalizedMessage)
+    local okCommand, command = pcall(Chat.ExtractCommandWithFallback, ctx, normalizedMessage)
+    if not okCommand then
+        command = nil
+    end
     if not command then
         ctx.RefreshKSMWindowIfVisible()
         return

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-04-30
+
+### Fixed
+- Deferred bootstrap `ADDON_LOADED`/`PLAYER_LOGIN` event binding out of the main chunk and added guarded retry scheduling, reducing `Frame:RegisterEvent()` forbidden-call captures in taint-heavy 12.0.5 sessions.
+- Hardened chat keystone-link parsing with a fail-closed readability gate and protected execution path so secret/unreadable payloads cannot trigger string-operation faults.
+- Added extra fail-closed protection around chat keystone-link ingestion and command extraction so parsing failures no longer propagate through chat event handling.
+- Unified chat payload readability validation through a reusable guarded string-access helper that checks readable string access before normalization/parsing work.
+
+### Packaging
+- Bumped TOC version to `1.9.1`.
+- Refreshed `Releases/1.9.1` payload and archive with the current runtime addon files.
+
 ## [1.9.0] - 2026-04-29
 
 ### Fixed

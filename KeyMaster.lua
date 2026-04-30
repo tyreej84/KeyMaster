@@ -51,6 +51,8 @@ local RUNTIME_EVENTS = {
 local databaseSanitized = false
 local scenarioTimerHooked = false
 local runtimeEventsRegistered = false
+local bootstrapEventsRegistered = false
+local bootstrapRetryScheduled = false
 
 local function SafeRegisterFrameEvent(eventName)
     if type(eventName) ~= "string" or eventName == "" then
@@ -88,12 +90,41 @@ local function RegisterRuntimeEventsOnce()
 end
 
 local function RegisterBootstrapEvents()
+    local allRegistered = true
     for _, eventName in ipairs(BOOTSTRAP_EVENTS) do
-        SafeRegisterFrameEvent(eventName)
+        if not SafeRegisterFrameEvent(eventName) then
+            allRegistered = false
+        end
     end
+
+    bootstrapEventsRegistered = allRegistered
+    return allRegistered
 end
 
-RegisterBootstrapEvents()
+local function ScheduleBootstrapRegistration(delaySeconds)
+    if bootstrapEventsRegistered then
+        return
+    end
+
+    if not C_Timer or type(C_Timer.After) ~= "function" then
+        RegisterBootstrapEvents()
+        return
+    end
+
+    if bootstrapRetryScheduled then
+        return
+    end
+
+    bootstrapRetryScheduled = true
+    C_Timer.After(delaySeconds or 0, function()
+        bootstrapRetryScheduled = false
+        if not RegisterBootstrapEvents() then
+            ScheduleBootstrapRegistration(1)
+        end
+    end)
+end
+
+ScheduleBootstrapRegistration(0)
 
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
 local KEYSTONE_ITEM_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS or { [180653] = true, [158923] = true, [151086] = true }
