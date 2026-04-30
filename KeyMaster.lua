@@ -1755,7 +1755,13 @@ local function PersistOwnGuildSnapshot()
     local canonicalFullName = GetNormalizedPlayerName(fullName) or fullName
     local canonicalShortName = GetNormalizedPlayerName(shortName) or shortName
 
-    if not IsPlayerAtCurrentExpansionMaxLevel() then
+    -- Resolve keystone data before the level gate. A player with a valid keystone
+    -- is by definition eligible for M+, so bypass the level check in that case.
+    local resolvedMapID, resolvedKeyLevel = GetOwnedKeystoneSnapshot()
+    local hasValidKeystone = (type(resolvedMapID) == "number" and resolvedMapID > 0
+        and type(resolvedKeyLevel) == "number" and resolvedKeyLevel > 0)
+
+    if not hasValidKeystone and not IsPlayerAtCurrentExpansionMaxLevel() then
         PurgeShortNameAliasesAcrossStores(canonicalShortName, nil)
         return false
     end
@@ -1767,8 +1773,6 @@ local function PersistOwnGuildSnapshot()
     if type(previousOwn) ~= "table" then
         previousOwn = ownStore[canonicalShortName]
     end
-
-    local resolvedMapID, resolvedKeyLevel = GetOwnedKeystoneSnapshot()
     local snapshot = {
         class = GetPlayerClassFile("player"),
         mapID = resolvedMapID or 0,

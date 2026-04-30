@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.3] - 2026-04-30
+
+### Fixed
+- Own character data now saves even when the expansion max-level API is unavailable (e.g. 12.0.5). A character with a valid keystone in their bag bypasses the level gate, since keystone possession already confirms M+ eligibility. Prevents `characters` and `guild.members` tables from remaining empty after login.
+
+### Packaging
+- Bumped TOC version to `1.9.3`.
+
 ## [1.9.2] - 2026-04-30
 
 ### Fixed
