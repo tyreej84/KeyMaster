@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.4] - 2026-04-30
+
+### Packaging
+- Bumped TOC version to `1.9.4` to continue development after the `1.9.3` release.
+
 ## [1.9.3] - 2026-04-30
 
 ### Fixed
