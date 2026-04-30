@@ -53,6 +53,7 @@ local scenarioTimerHooked = false
 local runtimeEventsRegistered = false
 local bootstrapEventsRegistered = false
 local bootstrapRetryScheduled = false
+local MANUAL_EXPANSION_MAX_LEVEL = 90
 
 local function SafeRegisterFrameEvent(eventName)
     if type(eventName) ~= "string" or eventName == "" then
@@ -973,7 +974,7 @@ local function GetCurrentExpansionMaxLevel()
         return fallback
     end
 
-    return nil
+    return MANUAL_EXPANSION_MAX_LEVEL
 end
 
 local function TryHookScenarioTimerUpdate()
