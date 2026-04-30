@@ -4,8 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [1.9.4] - 2026-04-30
 
+### Fixed
+- Own snapshot persistence now bypasses the max-level gate when a valid keystone is present, preventing characters with keys from being filtered out when level APIs are unstable during login timing.
+- Added a manual expansion max-level fallback of `90` when Blizzard max-level APIs do not return a usable value.
+- Added `BAG_UPDATE_DELAYED` persistence handling so own snapshots are retried when inventory data becomes available after login.
+
 ### Packaging
-- Bumped TOC version to `1.9.4` to continue development after the `1.9.3` release.
+- Bumped TOC version to `1.9.4`.
 
 ## [1.9.3] - 2026-04-30
 
