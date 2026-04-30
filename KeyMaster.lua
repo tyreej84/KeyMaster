@@ -1768,10 +1768,11 @@ local function PersistOwnGuildSnapshot()
         previousOwn = ownStore[canonicalShortName]
     end
 
+    local resolvedMapID, resolvedKeyLevel = GetOwnedKeystoneSnapshot()
     local snapshot = {
         class = GetPlayerClassFile("player"),
-        mapID = GetOwnedKeystoneMapID() or 0,
-        keyLevel = GetOwnedKeystoneLevel() or 0,
+        mapID = resolvedMapID or 0,
+        keyLevel = resolvedKeyLevel or 0,
         rating = floor((ResolveCurrentPlayerMythicPlusScore() or 0) + 0.5),
         source = "keystonemastery",
     }

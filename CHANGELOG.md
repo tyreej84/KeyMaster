@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-04-30
+
+### Fixed
+- Own character keystone data now persists to SavedVariables correctly when the direct keystone API returns empty on login. The character snapshot now uses the full keystone resolution path (including bag-scan fallback) so keystones visible in-game are always captured and saved.
+
+### Packaging
+- Bumped TOC version to `1.9.2`.
+
 ## [1.9.1] - 2026-04-30
 
 ### Fixed
