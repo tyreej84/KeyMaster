@@ -81,14 +81,15 @@ local function RegisterRuntimeEventsOnce()
         return true
     end
 
+    local allRegistered = true
     for _, eventName in ipairs(RUNTIME_EVENTS) do
         if not SafeRegisterFrameEvent(eventName) then
-            return false
+            allRegistered = false
         end
     end
 
-    runtimeEventsRegistered = true
-    return true
+    runtimeEventsRegistered = allRegistered
+    return allRegistered
 end
 
 local function RegisterBootstrapEvents()

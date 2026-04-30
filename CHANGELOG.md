@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Own snapshot persistence now bypasses the max-level gate when a valid keystone is present, preventing characters with keys from being filtered out when level APIs are unstable during login timing.
 - Added a manual expansion max-level fallback of `90` when Blizzard max-level APIs do not return a usable value.
 - Added `BAG_UPDATE_DELAYED` persistence handling so own snapshots are retried when inventory data becomes available after login.
+- Fixed runtime event registration starvation: a single failed event bind no longer aborts the remaining runtime event registrations. This ensures persistence-critical events like `PLAYER_LOGOUT` and `BAG_UPDATE_DELAYED` can still register even if another runtime event fails.
 
 ### Packaging
 - Bumped TOC version to `1.9.4`.
