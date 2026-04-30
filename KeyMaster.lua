@@ -27,6 +27,7 @@ local BOOTSTRAP_EVENTS = {
 
 local RUNTIME_EVENTS = {
     "CHAT_MSG_ADDON",
+    "BAG_UPDATE_DELAYED",
     "GUILD_ROSTER_UPDATE",
     "PLAYER_ENTERING_WORLD",
     "PLAYER_LOGOUT",
@@ -5336,6 +5337,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGOUT" then
+        PersistOwnGuildSnapshot()
+        return
+    end
+
+    if event == "BAG_UPDATE_DELAYED" then
         PersistOwnGuildSnapshot()
         return
     end

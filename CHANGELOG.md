@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Own character data now saves even when the expansion max-level API is unavailable (e.g. 12.0.5). A character with a valid keystone in their bag bypasses the level gate, since keystone possession already confirms M+ eligibility. Prevents `characters` and `guild.members` tables from remaining empty after login.
 - Added a manual expansion max-level fallback of `90` when Blizzard level APIs do not return a value, preventing false negatives in eligibility checks on patch transitions.
+- Added `BAG_UPDATE_DELAYED` persistence handling so own keystone snapshots are retried when inventory data finishes loading after login, closing the timing gap where login-time API calls can still be empty.
 
 ### Packaging
 - Bumped TOC version to `1.9.3`.
