@@ -2,18 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.9.6] - 2026-05-02
+## [1.9.5] - 2026-05-02
 
 ### Fixed
-- M+ overlay now auto-displays on zone-in and `/reload` inside an active key without requiring `/km ui on`. The root cause was the `OnUpdate` ticker being attached to the overlay frame itself, which only fires when the frame is shown — creating a deadlock where the frame could never self-show. Moved `OnUpdate` to the always-active main event frame so it ticks regardless of overlay visibility.
-- Overlay no longer shows outside the dungeon (e.g. in town after leaving a key). The show gate now requires a strict Mythic+ instance check (`GetInstanceInfo`) in addition to challenge-active signals, preventing false positives from elapsed timer or scenario APIs that remain set briefly after leaving.
-- Blizzard's default objective tracker is now correctly hidden when the M+ overlay is active, even when zoning into an in-progress key during combat. Suppression that was blocked by combat lockdown is now deferred and automatically retried as soon as combat ends via `PLAYER_REGEN_ENABLED`.
-- Tracker suppression state is reset on `PLAYER_ENTERING_WORLD` so conditions are fully re-evaluated on each zone transition.
-
-### Packaging
-- Bumped TOC version to `1.9.6`.
-
-## [1.9.5] - 2026-04-30
+- M+ overlay now auto-displays on zone-in and `/reload` during active runs without requiring `/km ui on`.
+- Fixed the render deadlock where the refresh ticker was attached to the hidden overlay frame. The ticker now runs on the always-active main frame.
+- Fixed overlay visibility leaking outside the dungeon by applying a strict Mythic+ instance gate for display.
+- Fixed default objective tracker suppression reliability by deferring suppression through combat lockdown and retrying on `PLAYER_REGEN_ENABLED`.
+- Fixed stale completed-run overlays showing in a different dungeon by matching completed run map context to the current instance before rendering.
+- Death hover now falls back to a minimal total line (`Deaths: N`) when per-player attribution entries are unavailable.
+- Hardened death attribution by refreshing group GUID-to-name mapping during active runs and resolving combat-log deaths from live party GUIDs before fallback heuristics.
 
 ### Packaging
 - Bumped TOC version to `1.9.5`.
