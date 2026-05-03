@@ -2636,32 +2636,7 @@ end
 
 IsInMythicDungeonInstance = function()
     local _, instanceType, difficultyID = GetInstanceInfo()
-    if instanceType == "party" and (difficultyID == 8 or difficultyID == 23) then
-        return true
-    end
-
-    if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then
-        return true
-    end
-
-    if C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID then
-        local activeMapID = C_ChallengeMode.GetActiveChallengeMapID()
-        if type(activeMapID) == "number" and activeMapID > 0 then
-            return true
-        end
-    end
-
-    local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
-    if type(elapsedSeconds) == "number" and elapsedSeconds >= 0 then
-        if C_Scenario and C_Scenario.GetStepInfo then
-            local _, _, criteriaCount = C_Scenario.GetStepInfo()
-            if type(criteriaCount) == "number" and criteriaCount > 0 then
-                return true
-            end
-        end
-    end
-
-    return false
+    return instanceType == "party" and (difficultyID == 8 or difficultyID == 23)
 end
 
 local function GetCriteriaCount()

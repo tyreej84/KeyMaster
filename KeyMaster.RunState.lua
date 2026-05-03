@@ -274,7 +274,7 @@ function RunState.HandleRunRefreshEvent(ctx, event)
 
     if event == "PLAYER_ENTERING_WORLD" then
         local _, instanceType, difficultyID = GetInstanceInfo()
-        local inMythicInstance = instanceType == "party" and difficultyID == 8
+        local inMythicInstance = instanceType == "party" and (difficultyID == 8 or difficultyID == 23)
         local elapsedSeconds = ctx.GetWorldElapsedSeconds and ctx.GetWorldElapsedSeconds() or nil
         local scenarioHasCriteria = false
         if C_Scenario and C_Scenario.GetStepInfo then
