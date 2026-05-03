@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.6] - 2026-05-03
+
+### Fixed
+- M+ overlay no longer displays inside incursions or other non-Mythic+ party instances. The instance gate now strictly checks for Mythic+ difficulty IDs only.
+
+### Packaging
+- Bumped TOC version to `1.9.6`.
+
 ## [1.9.5] - 2026-05-02
 
 ### Fixed
