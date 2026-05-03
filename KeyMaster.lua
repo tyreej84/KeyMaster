@@ -2,10 +2,6 @@ local addonName = ...
 local KMNS = _G.KeyMasterNS or {}
 
 
-local floor = math.floor
-local max = math.max
-local min = math.min
-local strlower = string.lower
 local strtrim = strtrim or function(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
 local IsChallengeModeRunActive
 local IsInMythicDungeonInstance
@@ -17,6 +13,7 @@ local GetCriteriaState
 local GetDeathState
 local CalculateChestTimerLimits
 local GetNormalizedPlayerName
+local PrintLocal
 
 local frame = CreateFrame("Frame")
 
@@ -35,6 +32,7 @@ local RUNTIME_EVENTS = {
     "CHALLENGE_MODE_START",
     "CHALLENGE_MODE_COMPLETED",
     "CHALLENGE_MODE_RESET",
+    "SCENARIO_UPDATE",
     "SCENARIO_CRITERIA_UPDATE",
     "COMBAT_LOG_EVENT_UNFILTERED",
     "GROUP_ROSTER_UPDATE",
@@ -49,12 +47,16 @@ local RUNTIME_EVENTS = {
     "CHAT_MSG_GUILD",
     "CHAT_MSG_OFFICER",
 }
-local databaseSanitized = false
-local scenarioTimerHooked = false
-local runtimeEventsRegistered = false
-local bootstrapEventsRegistered = false
-local bootstrapRetryScheduled = false
+local runtimeState = {
+    databaseSanitized = false,
+    scenarioTimerHooked = false,
+    runtimeEventsRegistered = false,
+    bootstrapEventsRegistered = false,
+    bootstrapRetryScheduled = false,
+}
 local MANUAL_EXPANSION_MAX_LEVEL = 90
+local WEEKLY_RESET_WEEKDAY_UTC = 3 -- Tuesday
+local WEEKLY_RESET_HOUR_UTC = 16 -- 11:00 EST (UTC-5)
 
 local function SafeRegisterFrameEvent(eventName)
     if type(eventName) ~= "string" or eventName == "" then
@@ -77,7 +79,7 @@ local function SafeRegisterFrameEvent(eventName)
 end
 
 local function RegisterRuntimeEventsOnce()
-    if runtimeEventsRegistered then
+    if runtimeState.runtimeEventsRegistered then
         return true
     end
 
@@ -88,7 +90,7 @@ local function RegisterRuntimeEventsOnce()
         end
     end
 
-    runtimeEventsRegistered = allRegistered
+    runtimeState.runtimeEventsRegistered = allRegistered
     return allRegistered
 end
 
@@ -100,12 +102,12 @@ local function RegisterBootstrapEvents()
         end
     end
 
-    bootstrapEventsRegistered = allRegistered
+    runtimeState.bootstrapEventsRegistered = allRegistered
     return allRegistered
 end
 
 local function ScheduleBootstrapRegistration(delaySeconds)
-    if bootstrapEventsRegistered then
+    if runtimeState.bootstrapEventsRegistered then
         return
     end
 
@@ -114,13 +116,13 @@ local function ScheduleBootstrapRegistration(delaySeconds)
         return
     end
 
-    if bootstrapRetryScheduled then
+    if runtimeState.bootstrapRetryScheduled then
         return
     end
 
-    bootstrapRetryScheduled = true
+    runtimeState.bootstrapRetryScheduled = true
     C_Timer.After(delaySeconds or 0, function()
-        bootstrapRetryScheduled = false
+        runtimeState.bootstrapRetryScheduled = false
         if not RegisterBootstrapEvents() then
             ScheduleBootstrapRegistration(1)
         end
@@ -129,16 +131,67 @@ end
 
 ScheduleBootstrapRegistration(0)
 
+local function GetMostRecentWeeklyResetEpoch(nowEpoch)
+    local now = tonumber(nowEpoch)
+    if type(now) ~= "number" or now <= 0 then
+        now = (GetServerTime and GetServerTime()) or time()
+    end
+
+    local utcNow = date("!*t", now)
+    if type(utcNow) ~= "table" then
+        return nil
+    end
+
+    local secondsSinceUtcMidnight = (tonumber(utcNow.hour) or 0) * 3600
+        + (tonumber(utcNow.min) or 0) * 60
+        + (tonumber(utcNow.sec) or 0)
+    local utcStartOfDay = now - secondsSinceUtcMidnight
+    local daysSinceTuesday = ((tonumber(utcNow.wday) or 1) - WEEKLY_RESET_WEEKDAY_UTC) % 7
+    local resetEpoch = utcStartOfDay - (daysSinceTuesday * 86400) + (WEEKLY_RESET_HOUR_UTC * 3600)
+
+    if now < resetEpoch then
+        resetEpoch = resetEpoch - (7 * 86400)
+    end
+
+    return resetEpoch
+end
+
+local function ApplyWeeklyKeyResetIfNeeded(db)
+    if type(db) ~= "table" then
+        return false
+    end
+
+    local currentResetEpoch = GetMostRecentWeeklyResetEpoch()
+    if type(currentResetEpoch) ~= "number" or currentResetEpoch <= 0 then
+        return false
+    end
+
+    local markerMissing = db.lastWeeklyResetAt == nil
+    local lastAppliedResetEpoch = tonumber(db.lastWeeklyResetAt) or 0
+
+    -- Migration guard: on first install of reset support, do not wipe existing data.
+    if markerMissing then
+        db.lastWeeklyResetAt = currentResetEpoch
+        return false
+    end
+
+    if lastAppliedResetEpoch >= currentResetEpoch then
+        return false
+    end
+
+    db.guild = db.guild or {}
+    db.guild.members = {}
+    db.characters = {}
+    db.lastWeeklyResetAt = currentResetEpoch
+    runtimeState.databaseSanitized = true
+    return true
+end
+
 local REPLY_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.REPLY_PREFIX or "KSM:"
 local KEYSTONE_ITEM_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_ITEM_IDS or { [180653] = true, [158923] = true, [151086] = true }
 local KEYSTONE_BAG_SLOTS = _G.KeyMasterNS and _G.KeyMasterNS.KEYSTONE_BAG_SLOTS or { Enum.BagIndex.Backpack, Enum.BagIndex.Bag_1, Enum.BagIndex.Bag_2, Enum.BagIndex.Bag_3, Enum.BagIndex.Bag_4 }
 local KSM_PORTAL_SPELL_IDS = _G.KeyMasterNS and _G.KeyMasterNS.KSM_PORTAL_SPELL_IDS or {}
 local KSM_PORTAL_SPELL_IDS_HORDE = _G.KeyMasterNS and _G.KeyMasterNS.KSM_PORTAL_SPELL_IDS_HORDE or {}
-local KEYS_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.KEYS_TEXT_COMMAND or "!keys"
-local KEY_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.KEY_TEXT_COMMAND or "!key"
-local SCORE_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.SCORE_TEXT_COMMAND or "!score"
-local SCORES_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.SCORES_TEXT_COMMAND or "!scores"
-local BEST_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.BEST_TEXT_COMMAND or "!best"
 local KSM_ADDON_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.KSM_ADDON_PREFIX or "KeyMaster"
 local KSM_GUILD_SYNC_VERSION = _G.KeyMasterNS and _G.KeyMasterNS.KSM_GUILD_SYNC_VERSION or "g1"
 local KSM_GUILD_SYNC_REQUEST = _G.KeyMasterNS and _G.KeyMasterNS.KSM_GUILD_SYNC_REQUEST or "req1"
@@ -147,9 +200,7 @@ local DETAILS_OPENRAID_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_OPENRA
 local DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_OPENRAID_KEYSTONE_REQUEST_PREFIX or "J"
 local DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX = _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_OPENRAID_KEYSTONE_DATA_PREFIX or "K"
 local CLASS_ID_TO_FILE = _G.KeyMasterNS and _G.KeyMasterNS.CLASS_ID_TO_FILE or {}
-local CHALLENGERS_PERIL_AFFIX_ID = _G.KeyMasterNS and _G.KeyMasterNS.CHALLENGERS_PERIL_AFFIX_ID or 152
 local BREAK_TIMER_BLUE = _G.KeyMasterNS and _G.KeyMasterNS.BREAK_TIMER_BLUE or { 0.15, 0.55, 1.00, 0.90 }
-local ABANDON_BUTTON_DEATH_THRESHOLD = 5
 local DEFAULT_DB = _G.KeyMasterNS and _G.KeyMasterNS.DEFAULT_DB or {
     ui = {
         enabled = true,
@@ -170,6 +221,8 @@ local ui = {
     objectiveLines = {},
     lastRefreshAt = 0,
     challengesFrameHooked = false,
+    objectiveTrackerFrameHooked = false,
+    hiddenTrackerFrame = nil,
     trackerSuppressed = false,
     inChallengeMode = false,
     lastRunState = nil,
@@ -567,11 +620,11 @@ local function UpdateDeathTooltipArea()
         return
     end
 
-    local width = max(ui.deathLine:GetWidth() or 0, ui.deathLine:GetStringWidth() or 0)
+    local width = math.max(ui.deathLine:GetWidth() or 0, ui.deathLine:GetStringWidth() or 0)
     local height = ui.deathLine:GetStringHeight() or 0
 
     if width <= 0 and ui.frame then
-        width = max(120, (ui.frame:GetWidth() or 0) - 24)
+        width = math.max(120, (ui.frame:GetWidth() or 0) - 24)
     end
 
     if height <= 0 then
@@ -709,6 +762,11 @@ local function InitializeDatabase()
         KeyMasterDB.ui.enabled = DEFAULT_DB.ui.enabled
     end
 
+    -- The M+ overlay is always enabled by default; reset if previously turned off
+    if KeyMasterDB.ui.enabled == false then
+        KeyMasterDB.ui.enabled = true
+    end
+
     if type(KeyMasterDB.ui.hideTrackerInMythicPlus) ~= "boolean" then
         KeyMasterDB.ui.hideTrackerInMythicPlus = DEFAULT_DB.ui.hideTrackerInMythicPlus
     end
@@ -737,12 +795,14 @@ local function InitializeDatabase()
         KeyMasterDB.characters = {}
     end
 
-    if not databaseSanitized and type(MergeNormalizedNameStore) == "function" then
+    ApplyWeeklyKeyResetIfNeeded(KeyMasterDB)
+
+    if not runtimeState.databaseSanitized and type(MergeNormalizedNameStore) == "function" then
         KeyMasterDB.guild.members = MergeNormalizedNameStore(KeyMasterDB.guild.members)
         KeyMasterDB.characters = MergeNormalizedNameStore(KeyMasterDB.characters)
         TrimStoreByEntryLimit(KeyMasterDB.guild.members, MAX_GUILD_MEMBER_ENTRIES)
         TrimStoreByEntryLimit(KeyMasterDB.characters, MAX_CHARACTER_ENTRIES)
-        databaseSanitized = true
+        runtimeState.databaseSanitized = true
     end
 
     -- Legacy cleanup: debugLog should not persist in SavedVariables.
@@ -780,8 +840,8 @@ local function BuildSanitizedStoreEntry(normalizedName, rawEntry)
     local updatedAt = ClampNumber(rawEntry.updatedAt, 0, nil, 0) or 0
     local hiddenInRecents = rawEntry.hiddenInRecents == true
 
-    -- Keep stores key-focused: drop entries that do not have a valid keystone.
-    if mapID <= 0 or keyLevel <= 0 then
+    -- Keep stores key-focused: keep entries with a valid key level even if mapID is temporarily unavailable.
+    if keyLevel <= 0 then
         return nil
     end
 
@@ -792,7 +852,7 @@ local function BuildSanitizedStoreEntry(normalizedName, rawEntry)
 
     local source = nil
     if type(rawEntry.source) == "string" then
-        source = strlower(rawEntry.source)
+        source = string.lower(rawEntry.source)
         if source == "manual-seed" then
             source = nil
         elseif #source > 32 then
@@ -980,7 +1040,7 @@ local function GetCurrentExpansionMaxLevel()
 end
 
 local function TryHookScenarioTimerUpdate()
-    if scenarioTimerHooked then
+    if runtimeState.scenarioTimerHooked then
         return
     end
 
@@ -1000,16 +1060,7 @@ local function TryHookScenarioTimerUpdate()
         end
     end)
 
-    scenarioTimerHooked = true
-end
-
-local function IsPlayerAtCurrentExpansionMaxLevel()
-    local level = UnitLevel and UnitLevel("player")
-    local maxLevel = GetCurrentExpansionMaxLevel()
-    if type(level) ~= "number" or type(maxLevel) ~= "number" or maxLevel <= 0 then
-        return false
-    end
-    return level >= maxLevel
+    runtimeState.scenarioTimerHooked = true
 end
 
 local function ResolvePreferredStoreName(store, normalizedName)
@@ -1026,7 +1077,7 @@ local function ResolvePreferredStoreName(store, normalizedName)
         return normalizedName
     end
 
-    local shortBaseLower = strlower(shortBase)
+    local shortBaseLower = string.lower(shortBase)
     local preferredName = nil
     local preferredUpdatedAt = -1
 
@@ -1041,7 +1092,7 @@ local function ResolvePreferredStoreName(store, normalizedName)
         local normalizedCandidate = GetNormalizedPlayerName(candidateName)
         if type(normalizedCandidate) == "string" and normalizedCandidate ~= "" and normalizedCandidate:find("%-", 1, true) then
             local candidateBase = normalizedCandidate:match("^([^-]+)") or normalizedCandidate
-            if strlower(candidateBase) == shortBaseLower then
+            if string.lower(candidateBase) == shortBaseLower then
                 local updatedAt = 0
                 if type(entry) == "table" then
                     updatedAt = tonumber(entry.updatedAt) or 0
@@ -1171,9 +1222,18 @@ local function SaveGuildMemberData(name, data)
     local now = GetServerTime and GetServerTime() or time()
     local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
     if not next(candidate) then
+        local existing = store[normalized]
+        if type(existing) == "table" and next(existing) then
+            return
+        end
+
         store[normalized] = nil
         local shortName = normalized:match("^([^-]+)")
         if shortName and shortName ~= normalized then
+            local legacyExisting = store[shortName]
+            if type(legacyExisting) == "table" and next(legacyExisting) then
+                return
+            end
             store[shortName] = nil
         end
         return
@@ -1198,9 +1258,18 @@ local function SaveOwnCharacterData(name, data)
     local now = GetServerTime and GetServerTime() or time()
     local candidate = BuildSanitizedStoreEntry(normalized, data) or {}
     if not next(candidate) then
+        local existing = store[normalized]
+        if type(existing) == "table" and next(existing) then
+            return
+        end
+
         store[normalized] = nil
         local shortName = normalized:match("^([^-]+)")
         if shortName and shortName ~= normalized then
+            local legacyExisting = store[shortName]
+            if type(legacyExisting) == "table" and next(legacyExisting) then
+                return
+            end
             store[shortName] = nil
         end
         return
@@ -1223,7 +1292,7 @@ local function PurgeShortNameAliasesAcrossStores(shortName, keepFullName)
     end
 
     local keepNormalized = GetNormalizedPlayerName(keepFullName)
-    local shortBaseLower = strlower(shortBase)
+    local shortBaseLower = string.lower(shortBase)
 
     local function PurgeStore(store)
         if type(store) ~= "table" then
@@ -1241,7 +1310,7 @@ local function PurgeShortNameAliasesAcrossStores(shortName, keepFullName)
             local normalizedCandidate = GetNormalizedPlayerName(candidateName)
             if type(normalizedCandidate) == "string" and normalizedCandidate ~= "" then
                 local candidateBase = normalizedCandidate:match("^([^-]+)") or normalizedCandidate
-                if strlower(candidateBase) == shortBaseLower and (not keepNormalized or normalizedCandidate ~= keepNormalized) then
+                if string.lower(candidateBase) == shortBaseLower and (not keepNormalized or normalizedCandidate ~= keepNormalized) then
                     store[key] = nil
                 end
             end
@@ -1595,8 +1664,12 @@ local function GetOwnedKeystoneSnapshot()
         keyLevel = (type(keyLevel) == "number" and keyLevel > 0) and keyLevel or parsedLevel
     end
 
-    if type(mapID) ~= "number" or mapID <= 0 or type(keyLevel) ~= "number" or keyLevel <= 0 then
+    if type(keyLevel) ~= "number" or keyLevel <= 0 then
         return nil, nil
+    end
+
+    if type(mapID) ~= "number" or mapID <= 0 then
+        return nil, keyLevel
     end
 
     return mapID, keyLevel
@@ -1724,7 +1797,7 @@ local function BuildOwnGuildSyncMessage()
         classFile,
         tostring(mapID or 0),
         tostring(keyLevel or 0),
-        tostring(floor(score + 0.5)),
+        tostring(math.floor(score + 0.5)),
     }, "\t")
 end
 
@@ -1758,16 +1831,15 @@ local function PersistOwnGuildSnapshot()
     local canonicalFullName = GetNormalizedPlayerName(fullName) or fullName
     local canonicalShortName = GetNormalizedPlayerName(shortName) or shortName
 
-    -- Resolve keystone data before the level gate. A player with a valid keystone
-    -- is by definition eligible for M+, so bypass the level check in that case.
-    local resolvedMapID, resolvedKeyLevel = GetOwnedKeystoneSnapshot()
-    local hasValidKeystone = (type(resolvedMapID) == "number" and resolvedMapID > 0
-        and type(resolvedKeyLevel) == "number" and resolvedKeyLevel > 0)
-
-    if not hasValidKeystone and not IsPlayerAtCurrentExpansionMaxLevel() then
+    -- Only persist level 90 characters. Level 89- can't have keystones.
+    local playerLevel = UnitLevel and UnitLevel("player")
+    if type(playerLevel) ~= "number" or playerLevel < MANUAL_EXPANSION_MAX_LEVEL then
         PurgeShortNameAliasesAcrossStores(canonicalShortName, nil)
         return false
     end
+
+    -- Resolve keystone data
+    local resolvedMapID, resolvedKeyLevel = GetOwnedKeystoneSnapshot()
 
     PurgeShortNameAliasesAcrossStores(canonicalShortName, canonicalFullName)
 
@@ -1780,7 +1852,7 @@ local function PersistOwnGuildSnapshot()
         class = GetPlayerClassFile("player"),
         mapID = resolvedMapID or 0,
         keyLevel = resolvedKeyLevel or 0,
-        rating = floor((ResolveCurrentPlayerMythicPlusScore() or 0) + 0.5),
+        rating = math.floor((ResolveCurrentPlayerMythicPlusScore() or 0) + 0.5),
         source = "keystonemastery",
     }
 
@@ -1793,6 +1865,11 @@ local function PersistOwnGuildSnapshot()
     end
     if (tonumber(snapshot.rating) or 0) <= 0 and type(previousOwn) == "table" and (tonumber(previousOwn.rating) or 0) > 0 then
         snapshot.rating = tonumber(previousOwn.rating) or snapshot.rating
+    end
+
+    local hasPersistableSnapshot = (tonumber(snapshot.keyLevel) or 0) > 0
+    if not hasPersistableSnapshot then
+        return false
     end
 
     SaveGuildMemberData(canonicalFullName, snapshot)
@@ -1809,18 +1886,62 @@ local function PersistOwnGuildSnapshot()
     return true
 end
 
-local function QueueOwnSnapshotPersistRetry(delaySeconds)
+local function QueueOwnSnapshotPersistRetry(delaySeconds, remainingAttempts)
+    local attemptsLeft = tonumber(remainingAttempts)
+    if type(attemptsLeft) ~= "number" or attemptsLeft < 1 then
+        attemptsLeft = 1
+    else
+        attemptsLeft = math.floor(attemptsLeft)
+    end
+
     if type(delaySeconds) ~= "number" or delaySeconds <= 0 then
-        PersistOwnGuildSnapshot()
+        local persisted = PersistOwnGuildSnapshot()
+        if not persisted and attemptsLeft > 1 then
+            QueueOwnSnapshotPersistRetry(2, attemptsLeft - 1)
+        end
         return
     end
 
     if C_Timer and type(C_Timer.After) == "function" then
         C_Timer.After(delaySeconds, function()
-            PersistOwnGuildSnapshot()
+            local persisted = PersistOwnGuildSnapshot()
+            if not persisted and attemptsLeft > 1 then
+                QueueOwnSnapshotPersistRetry(delaySeconds, attemptsLeft - 1)
+            end
         end)
     else
-        PersistOwnGuildSnapshot()
+        local persisted = PersistOwnGuildSnapshot()
+        if not persisted and attemptsLeft > 1 then
+            QueueOwnSnapshotPersistRetry(delaySeconds, attemptsLeft - 1)
+        end
+    end
+end
+
+local function QueueExternalSyncRetry(delaySeconds, remainingAttempts)
+    local attemptsLeft = tonumber(remainingAttempts)
+    if type(attemptsLeft) ~= "number" or attemptsLeft < 1 then
+        attemptsLeft = 1
+    else
+        attemptsLeft = math.floor(attemptsLeft)
+    end
+
+    local function Retry()
+        RequestGuildKeysFromAllSources(true, true)
+        RegisterLibOpenRaidCallbacks()
+        if attemptsLeft > 1 then
+            QueueExternalSyncRetry(delaySeconds, attemptsLeft - 1)
+        end
+    end
+
+    if type(delaySeconds) ~= "number" or delaySeconds <= 0 then
+        Retry()
+        return
+    end
+
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(delaySeconds, Retry)
+    else
+        Retry()
     end
 end
 
@@ -1888,6 +2009,13 @@ local function HandleAddonMessage(prefix, message, channel, sender)
     end
 end
 
+local function RegisterLibOpenRaidCallbacks()
+    local syncModule = _G.KeyMasterNS and _G.KeyMasterNS.Sync
+    if syncModule and syncModule.RegisterLibOpenRaidCallbacks then
+        syncModule.RegisterLibOpenRaidCallbacks(BuildSyncContext())
+    end
+end
+
 local BuildRunStateContext
 
 local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
@@ -1900,7 +2028,7 @@ local function ScheduleOwnedKeystoneObservation(allowAnnounce, delaySeconds)
             return
         end
 
-        local delay = type(delaySeconds) == "number" and max(0, delaySeconds) or 0
+        local delay = type(delaySeconds) == "number" and math.max(0, delaySeconds) or 0
         C_Timer.After(delay, function()
             ObserveOwnedKeystone(allowAnnounce)
         end)
@@ -1914,7 +2042,7 @@ end
 local function BuildScoreReply()
     local score = GetMythicPlusScore()
     if type(score) == "number" and score >= 0 then
-        return string.format("%s M+ Score: %d", REPLY_PREFIX, floor(score + 0.5))
+        return string.format("%s M+ Score: %d", REPLY_PREFIX, math.floor(score + 0.5))
     end
 
     return string.format("%s M+ Score unavailable", REPLY_PREFIX)
@@ -2139,7 +2267,7 @@ local function FormatBestRun(bestRun)
     local mapLabel = FormatDungeonLabel(bestRun.mapID)
 
     if type(bestRun.score) == "number" and bestRun.score > 0 then
-        return string.format("+%d %s (%d)", level, mapLabel, floor(bestRun.score + 0.5))
+        return string.format("+%d %s (%d)", level, mapLabel, math.floor(bestRun.score + 0.5))
     end
 
     return string.format("+%d %s", level, mapLabel)
@@ -2214,15 +2342,15 @@ end
 local function BuildChatContext()
     return {
         REPLY_PREFIX = REPLY_PREFIX,
-        KEY_TEXT_COMMAND = KEY_TEXT_COMMAND,
-        KEYS_TEXT_COMMAND = KEYS_TEXT_COMMAND,
-        SCORE_TEXT_COMMAND = SCORE_TEXT_COMMAND,
-        SCORES_TEXT_COMMAND = SCORES_TEXT_COMMAND,
-        BEST_TEXT_COMMAND = BEST_TEXT_COMMAND,
+        KEY_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.KEY_TEXT_COMMAND or "!key",
+        KEYS_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.KEYS_TEXT_COMMAND or "!keys",
+        SCORE_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.SCORE_TEXT_COMMAND or "!score",
+        SCORES_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.SCORES_TEXT_COMMAND or "!scores",
+        BEST_TEXT_COMMAND = _G.KeyMasterNS and _G.KeyMasterNS.BEST_TEXT_COMMAND or "!best",
         CHAT_EVENTS = CHAT_EVENTS,
         CHAT_EVENT_TO_CHANNEL = CHAT_EVENT_TO_CHANNEL,
         strtrim = strtrim,
-        strlower = strlower,
+        strlower = string.lower,
         BuildKeystoneReply = BuildKeystoneReply,
         BuildScoreReply = BuildScoreReply,
         BuildBestReply = BuildBestReply,
@@ -2240,7 +2368,7 @@ end
 BuildRunStateContext = function()
     return {
         ui = ui,
-        max = max,
+        max = math.max,
         IsChallengeModeRunActive = IsChallengeModeRunActive,
         IsInMythicDungeonInstance = IsInMythicDungeonInstance,
         ObserveOwnedKeystone = ObserveOwnedKeystone,
@@ -2444,12 +2572,8 @@ GetWorldElapsedSeconds = function()
 end
 
 IsChallengeModeRunActive = function()
-    if not IsInMythicDungeonInstance() then
-        ui.inChallengeMode = false
-        return false
-    end
-
-    -- First check: if we explicitly received a CHALLENGE_MODE_START event, trust that
+    -- First check: if we explicitly received a CHALLENGE_MODE_START event, trust that.
+    -- Do NOT clear this flag based on GetInstanceInfo() lag — only CHALLENGE_MODE_RESET clears it.
     if ui.inChallengeMode then
         return true
     end
@@ -2465,12 +2589,51 @@ IsChallengeModeRunActive = function()
         end
     end
 
+    if C_Scenario and C_Scenario.GetStepInfo then
+        local _, _, criteriaCount = C_Scenario.GetStepInfo()
+        if type(criteriaCount) == "number" and criteriaCount > 0 then
+            return true
+        end
+    end
+
+    -- Fallback: during some zoning transitions challenge APIs can lag, while
+    -- the scenario/world timer is already available for an active run.
+    local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
+    if type(elapsedSeconds) == "number" and elapsedSeconds >= 0 then
+        return true
+    end
+
     return false
 end
 
 IsInMythicDungeonInstance = function()
     local _, instanceType, difficultyID = GetInstanceInfo()
-    return instanceType == "party" and difficultyID == 8
+    if instanceType == "party" and (difficultyID == 8 or difficultyID == 23) then
+        return true
+    end
+
+    if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then
+        return true
+    end
+
+    if C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID then
+        local activeMapID = C_ChallengeMode.GetActiveChallengeMapID()
+        if type(activeMapID) == "number" and activeMapID > 0 then
+            return true
+        end
+    end
+
+    local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
+    if type(elapsedSeconds) == "number" and elapsedSeconds >= 0 then
+        if C_Scenario and C_Scenario.GetStepInfo then
+            local _, _, criteriaCount = C_Scenario.GetStepInfo()
+            if type(criteriaCount) == "number" and criteriaCount > 0 then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 local function GetCriteriaCount()
@@ -2526,7 +2689,7 @@ local function NormalizeObjectiveText(text)
         :gsub("|r", "")
         :gsub("[\226\128\153\226\128\152`']", "")
         :gsub("[%-%_%./]", " ")
-    normalized = strlower(normalized)
+    normalized = string.lower(normalized)
     normalized = normalized:gsub("[%(%):;,]", " ")
     normalized = normalized:gsub("%s+", " ")
     return strtrim(normalized)
@@ -2605,16 +2768,16 @@ local function ResolveEnemyForcesPercent(criteriaInfo, mapID, mapName)
 
     if type(quantityValue) == "number" then
         if useDirectPercent then
-            return min(100, max(0, quantityValue))
+            return math.min(100, math.max(0, quantityValue))
         end
 
         if type(criteriaInfo.totalQuantity) == "number" and criteriaInfo.totalQuantity > 0 then
-            return min(100, max(0, (quantityValue / criteriaInfo.totalQuantity) * 100))
+            return math.min(100, math.max(0, (quantityValue / criteriaInfo.totalQuantity) * 100))
         end
     end
 
     if type(criteriaInfo.quantity) == "number" and type(ui.enemyForcesTotalUnits) == "number" and ui.enemyForcesTotalUnits > 0 then
-        return min(100, max(0, (criteriaInfo.quantity / ui.enemyForcesTotalUnits) * 100))
+        return math.min(100, math.max(0, (criteriaInfo.quantity / ui.enemyForcesTotalUnits) * 100))
     end
 
     return nil
@@ -2669,7 +2832,7 @@ end
 
 local function CalculateEnemyForcesPercent(enemyInfo)
     if type(enemyInfo) == "number" then
-        return min(100, max(0, enemyInfo))
+        return math.min(100, math.max(0, enemyInfo))
     end
 
     if not enemyInfo then
@@ -2678,11 +2841,11 @@ local function CalculateEnemyForcesPercent(enemyInfo)
 
     local percent = KMNS.ParsePercentValue(enemyInfo.quantityString)
     if type(percent) == "number" then
-        return min(100, max(0, percent))
+        return math.min(100, math.max(0, percent))
     end
 
     if type(enemyInfo.quantity) == "number" and type(enemyInfo.totalQuantity) == "number" and enemyInfo.totalQuantity > 0 then
-        return min(100, max(0, (enemyInfo.quantity / enemyInfo.totalQuantity) * 100))
+        return math.min(100, math.max(0, (enemyInfo.quantity / enemyInfo.totalQuantity) * 100))
     end
 
     return nil
@@ -2720,8 +2883,9 @@ CalculateChestTimerLimits = function(maxTimeSeconds, affixIDs)
     local twoChestLimit = maxTimeSeconds * 0.8
     local threeChestLimit = maxTimeSeconds * 0.6
 
+    local challengersPerilAffixID = _G.KeyMasterNS and _G.KeyMasterNS.CHALLENGERS_PERIL_AFFIX_ID or 152
     for _, affixID in ipairs(affixIDs or {}) do
-        if affixID == CHALLENGERS_PERIL_AFFIX_ID then
+        if affixID == challengersPerilAffixID then
             local timeWithoutPenaltyWindow = maxTimeSeconds - 90
             twoChestLimit = (timeWithoutPenaltyWindow * 0.8) + 90
             threeChestLimit = (timeWithoutPenaltyWindow * 0.6) + 90
@@ -2795,9 +2959,9 @@ local function ApplyMythicFrameSettings()
     ui.frame:SetScale(settings.scale or 1)
     ui.frame:EnableMouse(true)
     if not settings.locked then
-        ui.dragLabel:SetText("KeyMaster (drag to move)")
+        ui.dragLabel:SetText("KeyStoneMastery (drag to move)")
     else
-        ui.dragLabel:SetText("KeyMaster")
+        ui.dragLabel:SetText("KeyStoneMastery")
     end
     if not settings.locked then ui.dragLabel:Show() else ui.dragLabel:Hide() end
 end
@@ -2828,6 +2992,16 @@ local function SetMythicUIEnabled(isEnabled)
     RefreshMythicUI()
 end
 
+local function EnsureHiddenTrackerFrame()
+    if ui.hiddenTrackerFrame then
+        return ui.hiddenTrackerFrame
+    end
+
+    ui.hiddenTrackerFrame = CreateFrame("Frame", nil, UIParent)
+    ui.hiddenTrackerFrame:Hide()
+    return ui.hiddenTrackerFrame
+end
+
 local function UpdateBlizzardTrackerVisibility(shouldSuppress)
     local suppress = shouldSuppress == true
 
@@ -2840,17 +3014,33 @@ local function UpdateBlizzardTrackerVisibility(shouldSuppress)
         return
     end
 
-    if InCombatLockdown and InCombatLockdown() then
+    if (InCombatLockdown and InCombatLockdown()) or (UnitAffectingCombat and UnitAffectingCombat("player")) then
+        -- Can't reparent protected frames in combat; flag so PLAYER_REGEN_ENABLED retries.
+        ui.pendingTrackerSuppress = suppress
+        return
+    end
+    ui.pendingTrackerSuppress = nil
+
+    if suppress then
+        local hiddenTrackerFrame = EnsureHiddenTrackerFrame()
+        if ObjectiveTrackerFrame:GetParent() ~= hiddenTrackerFrame then
+            ObjectiveTrackerFrame:SetParent(hiddenTrackerFrame)
+        end
+        hiddenTrackerFrame:Hide()
+        ui.trackerSuppressed = true
         return
     end
 
-    local alpha = suppress and 0 or 1
-    ObjectiveTrackerFrame:SetAlpha(alpha)
-    if ObjectiveTrackerBlocksFrame and ObjectiveTrackerBlocksFrame.SetAlpha then
-        ObjectiveTrackerBlocksFrame:SetAlpha(alpha)
+    if ObjectiveTrackerFrame:GetParent() ~= UIParent then
+        ObjectiveTrackerFrame:SetParent(UIParent)
     end
 
-    ui.trackerSuppressed = suppress
+    ObjectiveTrackerFrame:SetAlpha(1)
+    if ObjectiveTrackerBlocksFrame and ObjectiveTrackerBlocksFrame.SetAlpha then
+        ObjectiveTrackerBlocksFrame:SetAlpha(1)
+    end
+
+    ui.trackerSuppressed = false
 end
 
 local function SetMythicFrameLocked(isLocked)
@@ -2864,15 +3054,32 @@ local function BuildUIStatusLine()
     local anchor = string.format("%s/%s", point[1] or "CENTER", point[3] or "CENTER")
     local offset = string.format("%d,%d", point[4] or 0, point[5] or 0)
     local challengeActive = IsChallengeModeRunActive()
+    local inMythicInstance = IsInMythicDungeonInstance()
+    local challengeApiActive = C_ChallengeMode
+        and ((C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
+            or (C_ChallengeMode.GetActiveChallengeMapID and type(C_ChallengeMode.GetActiveChallengeMapID()) == "number" and C_ChallengeMode.GetActiveChallengeMapID() > 0))
+    local scenarioCriteriaCount = 0
+    if C_Scenario and C_Scenario.GetStepInfo then
+        local _, _, criteriaCount = C_Scenario.GetStepInfo()
+        if type(criteriaCount) == "number" then
+            scenarioCriteriaCount = criteriaCount
+        end
+    end
+    local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
 
     return string.format(
-        "UI status - enabled: %s, hidden: %s, tracker hide in M+: %s, locked: %s, scale: %.2f, M+ detected: %s, anchor: %s (%s)",
+        "UI status - enabled: %s, hidden: %s, tracker hide in M+: %s, locked: %s, scale: %.2f, M+ detected: %s, inChallengeFlag: %s, inMythicInstance: %s, challengeApi: %s, scenarioCriteria: %d, elapsed: %s, anchor: %s (%s)",
         uiSettings.enabled and "on" or "off",
         uiSettings.hidden and "yes" or "no",
         uiSettings.hideTrackerInMythicPlus and "on" or "off",
         uiSettings.locked and "yes" or "no",
         uiSettings.scale or 1,
         challengeActive and "yes" or "no",
+        ui.inChallengeMode and "yes" or "no",
+        inMythicInstance and "yes" or "no",
+        challengeApiActive and "yes" or "no",
+        scenarioCriteriaCount,
+        type(elapsedSeconds) == "number" and string.format("%.0fs", elapsedSeconds) or "nil",
         anchor,
         offset
     )
@@ -2900,7 +3107,7 @@ local function RegisterSettingsPanel()
     end
 
     local panel = CreateFrame("Frame", addonName .. "SettingsPanel", UIParent)
-    panel.name = "KeyMaster"
+    panel.name = "KeyStoneMastery"
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
@@ -2995,11 +3202,19 @@ local function RenderMythicUI()
 
     local settings = InitializeDatabase().ui
     local inMythicInstance = IsInMythicDungeonInstance()
-    if not inMythicInstance then
-        ui.inChallengeMode = false
+    -- Only reset inChallengeMode if we are NOT in a mythic instance AND
+    -- no explicit challenge-start event has told us a run is active.
+    -- This prevents a brief GetInstanceInfo() lag from killing the frame on key start.
+    if not inMythicInstance and not ui.inChallengeMode then
         ui.lastRunState = nil
     end
-    local challengeActive = inMythicInstance and IsChallengeModeRunActive()
+    -- challengeActive: trust challenge runtime signals, but only show the frame
+    -- when actually inside the mythic instance — not in town/outside.
+    local challengeSignal = ui.inChallengeMode or IsChallengeModeRunActive()
+    local challengeActive = challengeSignal and inMythicInstance
+    if challengeActive and settings.hidden then
+        settings.hidden = false
+    end
     local shouldSuppressTracker = settings.enabled
         and not settings.hidden
         and challengeActive
@@ -3051,7 +3266,7 @@ local function RenderMythicUI()
             y = y - ui.timerLine:GetStringHeight() - 4
 
             if state.twoChestLimit then
-                ui.twoChestLine:SetText(string.format("+2 (%s): %s", KMNS.FormatSeconds(state.twoChestLimit), KMNS.FormatSeconds(max(0, state.twoChestLimit - state.elapsedSeconds))))
+                ui.twoChestLine:SetText(string.format("+2 (%s): %s", KMNS.FormatSeconds(state.twoChestLimit), KMNS.FormatSeconds(math.max(0, state.twoChestLimit - state.elapsedSeconds))))
             else
                 ui.twoChestLine:SetText("+2: --:--")
             end
@@ -3061,7 +3276,7 @@ local function RenderMythicUI()
             y = y - ui.twoChestLine:GetStringHeight() - 4
 
             if state.threeChestLimit then
-                ui.threeChestLine:SetText(string.format("+3 (%s): %s", KMNS.FormatSeconds(state.threeChestLimit), KMNS.FormatSeconds(max(0, state.threeChestLimit - state.elapsedSeconds))))
+                ui.threeChestLine:SetText(string.format("+3 (%s): %s", KMNS.FormatSeconds(state.threeChestLimit), KMNS.FormatSeconds(math.max(0, state.threeChestLimit - state.elapsedSeconds))))
             else
                 ui.threeChestLine:SetText("+3: --:--")
             end
@@ -3088,8 +3303,8 @@ local function RenderMythicUI()
 
             local enemyPercent = CalculateEnemyForcesPercent(state.enemyForcesPercent)
             if type(enemyPercent) == "number" then
-                local barValue = max(0, min(1, enemyPercent / 100))
-                local displayEnemyPercent = min(100, max(0, floor(enemyPercent + 0.000001)))
+                local barValue = math.max(0, math.min(1, enemyPercent / 100))
+                local displayEnemyPercent = math.min(100, math.max(0, math.floor(enemyPercent + 0.000001)))
 
                 ui.enemyBar:ClearAllPoints()
                 ui.enemyBar:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)
@@ -3130,7 +3345,7 @@ local function RenderMythicUI()
             end
 
             local deathCount = tonumber(state.deathCount) or 0
-            if deathCount >= ABANDON_BUTTON_DEATH_THRESHOLD and IsInGroup() then
+            if deathCount >= 5 and IsInGroup() then
                 ui.abandonButton:ClearAllPoints()
                 ui.abandonButton:SetPoint("TOP", ui.frame, "TOP", 0, y - 2)
                 ui.abandonButton:Show()
@@ -3139,7 +3354,7 @@ local function RenderMythicUI()
                 ui.abandonButton:Hide()
             end
 
-            ui.frame:SetHeight(max(120, -y + 12))
+            ui.frame:SetHeight(math.max(120, -y + 12))
         elseif challengeActive then
             local width = 288
             local xPadding = 10
@@ -3257,7 +3472,7 @@ local function RenderMythicUI()
                 ui.objectiveLines[index]:Hide()
             end
 
-            ui.frame:SetHeight(max(120, -y + 12))
+            ui.frame:SetHeight(math.max(120, -y + 12))
         else
             ui.abandonButton:Hide()
             ui.frame:Hide()
@@ -3367,7 +3582,7 @@ local function CreateMythicUI()
     ui.deathHitArea = deathHitArea
 
     ui.dragLabel = CreateLine(mythicFrame, 11)
-    ui.dragLabel:SetText("KeyMaster")
+    ui.dragLabel:SetText("KeyStoneMastery")
     ui.dragLabel:SetTextColor(1, 1, 1, 0.85)
 
     local enemyBar = CreateFrame("Frame", nil, mythicFrame, BackdropTemplateMixin and "BackdropTemplate")
@@ -3421,16 +3636,6 @@ local function CreateMythicUI()
 
     ui.enemyBar = enemyBar
 
-    mythicFrame:SetScript("OnUpdate", function(_, elapsed)
-        ui.lastRefreshAt = ui.lastRefreshAt + elapsed
-        if ui.lastRefreshAt < ((_G.KeyMasterNS and _G.KeyMasterNS.UI_REFRESH_INTERVAL_SECONDS) or 0.2) then
-            return
-        end
-
-        ui.lastRefreshAt = 0
-        RenderMythicUI()
-    end)
-
     ApplyMythicFrameSettings()
 end
 
@@ -3442,6 +3647,23 @@ RefreshMythicUI = function()
     ui.lastRefreshAt = ((_G.KeyMasterNS and _G.KeyMasterNS.UI_REFRESH_INTERVAL_SECONDS) or 0.2)
     RenderMythicUI()
 end
+
+-- Attach the render ticker to the main event frame (always active) instead of
+-- mythicFrame (which only fires OnUpdate when shown). This ensures RenderMythicUI
+-- runs even when the mythic frame is hidden, so it can self-show on challenge start.
+frame:SetScript("OnUpdate", function(_, elapsed)
+    ui.lastRefreshAt = (ui.lastRefreshAt or 0) + elapsed
+    if ui.lastRefreshAt < ((_G.KeyMasterNS and _G.KeyMasterNS.UI_REFRESH_INTERVAL_SECONDS) or 0.2) then
+        return
+    end
+    ui.lastRefreshAt = 0
+    -- Self-heal: if the mythic frame was never created (e.g. PerformLoginInitialization
+    -- ran before DB/frame was ready), create it now so RenderMythicUI can proceed.
+    if not ui.frame then
+        CreateMythicUI()
+    end
+    RenderMythicUI()
+end)
 
 local function TryAutoSlotKeystone()
     if not (C_ChallengeMode and C_ChallengeMode.SlotKeystone) then return end
@@ -3471,6 +3693,33 @@ local function HookChallengesFrame()
 
     ChallengesKeystoneFrame:HookScript("OnShow", TryAutoSlotKeystone)
     ui.challengesFrameHooked = true
+end
+
+local function HookObjectiveTrackerFrame()
+    if ui.objectiveTrackerFrameHooked or not ObjectiveTrackerFrame then
+        return
+    end
+
+    local originalShow = ObjectiveTrackerFrame.Show
+    ObjectiveTrackerFrame.Show = function(self)
+        local settings = InitializeDatabase().ui
+        local shouldHideTracker = settings.enabled
+            and not settings.hidden
+            and IsInMythicDungeonInstance()
+            and IsChallengeModeRunActive()
+            and (settings.hideTrackerInMythicPlus ~= false)
+
+        if shouldHideTracker then
+            UpdateBlizzardTrackerVisibility(true)
+            return
+        end
+
+        if type(originalShow) == "function" then
+            originalShow(self)
+        end
+    end
+
+    ui.objectiveTrackerFrameHooked = true
 end
 
 local function PrintEnemyForcesDebugSummary()
@@ -3520,7 +3769,7 @@ local function PrintEnemyForcesDebugSummary()
                 tostring(info.totalQuantity),
                 tostring(info.quantityString),
                 tostring(parsedPercent),
-                tostring(inferredTotal and floor(inferredTotal + 0.5) or "nil"),
+                tostring(inferredTotal and math.floor(inferredTotal + 0.5) or "nil"),
                 info.isWeightedProgress and "yes" or "no",
                 info.completed and "yes" or "no"
             ))
@@ -3757,7 +4006,7 @@ local function ResolveBestScore(result1, result2)
         local bestScore
         for key, entry in pairs(value) do
             if type(entry) == "number" then
-                local keyName = type(key) == "string" and strlower(key) or ""
+                local keyName = type(key) == "string" and string.lower(key) or ""
                 if keyName ~= "" and (string.find(keyName, "score", 1, true) or string.find(keyName, "rating", 1, true)) then
                     if entry > 0 and (not bestScore or entry > bestScore) then
                         bestScore = entry
@@ -3860,7 +4109,7 @@ local function GetBestSeasonRunForMapFromHistory(mapID)
         if (not score) and type(run) == "table" then
             for key, value in pairs(run) do
                 if type(value) == "number" and type(key) == "string" then
-                    local keyName = strlower(key)
+                    local keyName = string.lower(key)
                     if (string.find(keyName, "score", 1, true) or string.find(keyName, "rating", 1, true)) and value > 0 then
                         score = value
                         break
@@ -4448,9 +4697,9 @@ end
 local function BuildKSMContext()
     return {
         ui = ui,
-        floor = floor,
-        min = min,
-        max = max,
+        floor = math.floor,
+        min = math.min,
+        max = math.max,
         KSM_GUILD_RECENT_DAYS = (_G.KeyMasterNS and _G.KeyMasterNS.KSM_GUILD_RECENT_DAYS) or 7,
         GetMythicPlusScore = GetMythicPlusScore,
         GetBestRunsFromHistory = GetBestRunsFromHistory,
@@ -4587,7 +4836,7 @@ function CreateKSMWindow()
     local tabHeight = 22
     local tabGap = 8
     local totalTabsWidth = (tabWidth * 5) + (tabGap * 4)
-    local tabsStartX = floor(((frame:GetWidth() or 600) - totalTabsWidth) / 2 + 0.5)
+    local tabsStartX = math.floor(((frame:GetWidth() or 600) - totalTabsWidth) / 2 + 0.5)
 
     local function CreateTabButton(text, xOffset)
         local button = CreateFrame("Button", nil, frame)
@@ -4922,7 +5171,7 @@ function CreateKSMWindow()
 
     local prevPageButton = CreateGuildPagerButton("<", -122)
     prevPageButton:SetScript("OnClick", function()
-        ui.ksmGuildPage = max(1, (ui.ksmGuildPage or 1) - 1)
+        ui.ksmGuildPage = math.max(1, (ui.ksmGuildPage or 1) - 1)
         RefreshKSMWindowIfVisible()
     end)
 
@@ -5000,7 +5249,7 @@ function CreateKSMWindow()
     recentsPrevPageButton:ClearAllPoints()
     recentsPrevPageButton:SetPoint("BOTTOM", recentsContent, "BOTTOM", -122, 8)
     recentsPrevPageButton:SetScript("OnClick", function()
-        ui.ksmRecentsPage = max(1, (ui.ksmRecentsPage or 1) - 1)
+        ui.ksmRecentsPage = math.max(1, (ui.ksmRecentsPage or 1) - 1)
         RefreshKSMWindowIfVisible()
     end)
 
@@ -5060,7 +5309,7 @@ function CreateKSMWindow()
     warbandPrevPageButton:ClearAllPoints()
     warbandPrevPageButton:SetPoint("BOTTOM", warbandContent, "BOTTOM", -122, 8)
     warbandPrevPageButton:SetScript("OnClick", function()
-        ui.ksmWarbandPage = max(1, (ui.ksmWarbandPage or 1) - 1)
+        ui.ksmWarbandPage = math.max(1, (ui.ksmWarbandPage or 1) - 1)
         RefreshKSMWindowIfVisible()
     end)
 
@@ -5112,8 +5361,9 @@ end
 
 SLASH_KEYSTONEMASTER1 = "/ksm"
 SlashCmdList.KEYSTONEMASTER = function(message)
+    PersistOwnGuildSnapshot()
     CreateKSMWindow()
-    local command = strtrim(strlower(message or ""))
+    local command = strtrim(string.lower(message or ""))
 
     if command == "" or command == "toggle" then
         if ui.ksmFrame:IsShown() then
@@ -5150,7 +5400,31 @@ SlashCmdList.KEYSTONEMASTER = function(message)
         return
     end
 
-    PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, recents, warband, refresh")
+    if command == "debug" then
+        local mapID, keyLevel = GetOwnedKeystoneSnapshot()
+        local playerLevel = UnitLevel and UnitLevel("player")
+        local playerName = UnitName and UnitName("player")
+        local guildStore = GetGuildMemberStore()
+        local charStore = GetOwnCharacterStore()
+        local guildCount = 0
+        for _ in pairs(guildStore) do guildCount = guildCount + 1 end
+        local charCount = 0
+        for _ in pairs(charStore) do charCount = charCount + 1 end
+        PrintLocal(string.format("KSM Debug: player=%s level=%s mapID=%s keyLevel=%s", tostring(playerName), tostring(playerLevel), tostring(mapID), tostring(keyLevel)))
+        PrintLocal(string.format("KSM Debug: guild.members=%d characters=%d", guildCount, charCount))
+        local ok, err = pcall(PersistOwnGuildSnapshot)
+        local guildCount2, charCount2 = 0, 0
+        for _ in pairs(guildStore) do guildCount2 = guildCount2 + 1 end
+        for _ in pairs(charStore) do charCount2 = charCount2 + 1 end
+        if ok then
+            PrintLocal(string.format("KSM Debug: after persist guild.members=%d characters=%d", guildCount2, charCount2))
+        else
+            PrintLocal(string.format("KSM Debug: persist error: %s", tostring(err)))
+        end
+        return
+    end
+
+    PrintLocal("unknown /ksm command. Use: show, hide, toggle, main, party, guild, recents, warband, refresh, debug")
 end
 
 SLASH_KEYMASTER1 = "/keymaster"
@@ -5160,7 +5434,7 @@ SlashCmdList.KEYMASTER = function(message)
     CreateMythicUI()
     RegisterSettingsPanel()
 
-    local command = strtrim(strlower(message or ""))
+    local command = strtrim(string.lower(message or ""))
     if command == "" then
         PrintLocal(BuildUIStatusLine())
         PrintLocal("UI commands: settings, status, ui on, ui off, ui restore, lock, unlock, hide, show, reset, scale <value>. Unlock the UI, then drag it where you want it.")
@@ -5287,19 +5561,22 @@ function PerformLoginInitialization()
     CreateMythicUI()
     RegisterSettingsPanel()
     TryHookScenarioTimerUpdate()
+    HookObjectiveTrackerFrame()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         pcall(C_ChatInfo.RegisterAddonMessagePrefix, KSM_ADDON_PREFIX)
         pcall(C_ChatInfo.RegisterAddonMessagePrefix, ASTRAL_KEYS_PREFIX)
         pcall(C_ChatInfo.RegisterAddonMessagePrefix, DETAILS_OPENRAID_PREFIX)
+        pcall(C_ChatInfo.RegisterAddonMessagePrefix, _G.KeyMasterNS and _G.KeyMasterNS.DETAILS_PLAYERINFO_PREFIX or "PITB")
     end
     if C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_ChallengesUI") then
         HookChallengesFrame()
     end
     ObserveOwnedKeystone(false)
     BroadcastOwnGuildSnapshot()
-    QueueOwnSnapshotPersistRetry(2)
-    QueueOwnSnapshotPersistRetry(8)
+    QueueOwnSnapshotPersistRetry(2, 15)
     RequestGuildKeysFromAllSources(true, true)
+    RegisterLibOpenRaidCallbacks()
+    QueueExternalSyncRetry(2, 8)
     RefreshMythicUI()
 end
 
@@ -5319,27 +5596,99 @@ frame:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LOGIN" then
-        if not runtimeEventsRegistered then
+        if not runtimeState.runtimeEventsRegistered then
             RegisterRuntimeEventsOnce()
         end
         PerformLoginInitialization()
         return
     end
 
-    if event == "PLAYER_ENTERING_WORLD" then
-        if not runtimeEventsRegistered then
+    if event == "CHALLENGE_MODE_START" then
+        if not runtimeState.runtimeEventsRegistered then
             RegisterRuntimeEventsOnce()
         end
         TryHookScenarioTimerUpdate()
         PersistOwnGuildSnapshot()
-        QueueOwnSnapshotPersistRetry(2)
-        QueueOwnSnapshotPersistRetry(8)
-        return
+        QueueOwnSnapshotPersistRetry(2, 8)
+
+        -- Guard: CHALLENGE_MODE_START fires twice on zone-in — first with nil map ID
+        -- (world not ready), then again with real data. Skip UI work on the nil fire.
+        local currentMapID = C_ChallengeMode and C_ChallengeMode.GetActiveChallengeMapID and C_ChallengeMode.GetActiveChallengeMapID()
+        if currentMapID ~= nil then
+            ui.inChallengeMode = true
+            local settings = InitializeDatabase().ui
+            settings.enabled = true
+            settings.hidden = false
+            -- Ensure the frame exists before the run-state lifecycle handler renders it.
+            CreateMythicUI()
+            ApplyMythicFrameSettings()
+            RefreshMythicUI()
+            -- Show the frame immediately and let OnUpdate render the content
+            if ui.frame then
+                ui.frame:SetAlpha(1)
+                ui.frame:Show()
+            end
+        end
     end
 
     if event == "PLAYER_LOGOUT" then
         PersistOwnGuildSnapshot()
         return
+    end
+
+    if event == "PLAYER_ENTERING_WORLD" then
+        PersistOwnGuildSnapshot()
+        QueueOwnSnapshotPersistRetry(2, 8)
+        RegisterLibOpenRaidCallbacks()
+        QueueExternalSyncRetry(2, 5)
+        -- Reset tracker state so suppression is re-evaluated on the new zone's conditions.
+        ui.trackerSuppressed = false
+        ui.pendingTrackerSuppress = nil
+        -- If zoning into an in-progress key, CHALLENGE_MODE_START won't fire again.
+        -- APIs may not be ready immediately, so poll for up to 10 seconds.
+        local attempts = 0
+        local function TryShowMythicUI()
+            attempts = attempts + 1
+            -- Use Blizzard APIs directly to avoid side-effects on ui.inChallengeMode
+            local inMythicInstance = IsInMythicDungeonInstance()
+            local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
+            local scenarioHasCriteria = false
+            if C_Scenario and C_Scenario.GetStepInfo then
+                local _, _, criteriaCount = C_Scenario.GetStepInfo()
+                scenarioHasCriteria = type(criteriaCount) == "number" and criteriaCount > 0
+            end
+            local challengeActive = (C_ChallengeMode
+                    and ((C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
+                        or (C_ChallengeMode.GetActiveChallengeMapID and type(C_ChallengeMode.GetActiveChallengeMapID()) == "number" and C_ChallengeMode.GetActiveChallengeMapID() > 0)))
+                or (inMythicInstance and scenarioHasCriteria)
+                or (inMythicInstance and type(elapsedSeconds) == "number" and elapsedSeconds >= 0)
+            if challengeActive then
+                ui.inChallengeMode = true
+                local settings = InitializeDatabase().ui
+                settings.enabled = true
+                settings.hidden = false
+                if not runtimeState.runtimeEventsRegistered then
+                    RegisterRuntimeEventsOnce()
+                end
+                TryHookScenarioTimerUpdate()
+                CreateMythicUI()
+                ApplyMythicFrameSettings()
+                RefreshMythicUI()
+                if ui.frame then
+                    ui.frame:SetAlpha(1)
+                    ui.frame:Show()
+                end
+                return
+            end
+            if attempts < 20 and C_Timer and C_Timer.After then
+                C_Timer.After(0.5, TryShowMythicUI)
+            end
+        end
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.5, TryShowMythicUI)
+        end
+        -- Do not return here: RunState refresh handler also needs PLAYER_ENTERING_WORLD
+        -- so the UI can recover on zone transitions during active runs.
     end
 
     if event == "BAG_UPDATE_DELAYED" then
@@ -5362,6 +5711,16 @@ frame:SetScript("OnEvent", function(_, event, ...)
         RequestGuildKeysFromAllSources(false, true)
         RefreshKSMWindowIfVisible()
         return
+    end
+
+    if event == "PLAYER_REGEN_ENABLED" then
+        -- Combat just ended. If tracker suppression was deferred due to combat
+        -- lockdown, retry it now.
+        if ui.pendingTrackerSuppress ~= nil then
+            local pending = ui.pendingTrackerSuppress
+            ui.pendingTrackerSuppress = nil
+            UpdateBlizzardTrackerVisibility(pending)
+        end
     end
 
     local runStateModule = _G.KeyMasterNS and _G.KeyMasterNS.RunState
@@ -5388,3 +5747,4 @@ frame:SetScript("OnEvent", function(_, event, ...)
 
     HandleChatMessage(event, ...)
 end)
+

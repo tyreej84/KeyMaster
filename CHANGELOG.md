@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.6] - 2026-05-02
+
+### Fixed
+- M+ overlay now auto-displays on zone-in and `/reload` inside an active key without requiring `/km ui on`. The root cause was the `OnUpdate` ticker being attached to the overlay frame itself, which only fires when the frame is shown — creating a deadlock where the frame could never self-show. Moved `OnUpdate` to the always-active main event frame so it ticks regardless of overlay visibility.
+- Overlay no longer shows outside the dungeon (e.g. in town after leaving a key). The show gate now requires a strict Mythic+ instance check (`GetInstanceInfo`) in addition to challenge-active signals, preventing false positives from elapsed timer or scenario APIs that remain set briefly after leaving.
+- Blizzard's default objective tracker is now correctly hidden when the M+ overlay is active, even when zoning into an in-progress key during combat. Suppression that was blocked by combat lockdown is now deferred and automatically retried as soon as combat ends via `PLAYER_REGEN_ENABLED`.
+- Tracker suppression state is reset on `PLAYER_ENTERING_WORLD` so conditions are fully re-evaluated on each zone transition.
+
+### Packaging
+- Bumped TOC version to `1.9.6`.
+
 ## [1.9.5] - 2026-04-30
 
 ### Packaging
