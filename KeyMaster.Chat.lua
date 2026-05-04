@@ -127,9 +127,8 @@ function Chat.HandleChatMessage(ctx, event, message, sender)
         return
     end
 
-    if InCombatLockdown and InCombatLockdown() then
-        return
-    end
+    -- Do not gate on combat lockdown here: SendOrQueueChatMessage will defer
+    -- the reply until combat ends, so commands typed in combat still get a reply.
 
     if ctx.CanReadChatPayload and not ctx.CanReadChatPayload(message) then
         return

@@ -313,9 +313,9 @@ local function IsChatSendPathSecure()
         return true
     end
 
-    local secureGlobal = issecurevariable("SendChatMessage")
-    local secureCAPI = issecurevariable(C_ChatInfo, "SendChatMessage")
-    return secureGlobal == true and secureCAPI == true
+    -- Only check the API we actually use to send; the old SendChatMessage global
+    -- may be absent or tainted without affecting C_ChatInfo.SendChatMessage.
+    return issecurevariable(C_ChatInfo, "SendChatMessage") == true
 end
 
 local function TrySendChatMessage(message, chatType)

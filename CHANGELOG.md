@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.7] - 2026-05-04
+
+### Fixed
+- Fixed `!keys`, `!score`, and `!best` commands not responding. The chat-send security check was also validating the old deprecated `SendChatMessage` global which is no longer reliably available; the check now only validates `C_ChatInfo.SendChatMessage`, which is the actual API used to send replies.
+- Removed the combat-lockdown hard-drop in the chat handler. Commands typed during combat are now parsed and the reply is queued; it sends automatically when combat ends.
+
+### Packaging
+- Bumped TOC version to `1.9.7`.
+
 ## [1.9.6] - 2026-05-03
 
 ### Fixed

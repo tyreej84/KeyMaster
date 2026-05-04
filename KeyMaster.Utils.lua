@@ -248,9 +248,5 @@ function ns.ExtractRequestCommand(message)
 end
 
 function ns.CanReadChatPayload(message)
-    if InCombatLockdown and InCombatLockdown() then
-        return false
-    end
-
     return IsReadableStringValue(message)
 end
