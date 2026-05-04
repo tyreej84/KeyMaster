@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.9] - 2026-05-04
+
+### Packaging
+- Bumped TOC version to `1.9.9`.
+- Refreshed local release payload and archive for `Releases/1.9.9`.
+- Synced active addon files to the live WoW AddOns directory.
+
 ## [1.9.8] - 2026-05-04
 
 ### Fixed
