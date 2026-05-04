@@ -90,7 +90,7 @@ function RunState.GetActiveRunState(ctx)
         affixSummary = ctx.GetAffixSummary(affixIDs),
         elapsedSeconds = elapsedSeconds,
         maxTimeSeconds = maxTimeSeconds,
-        timeLeftSeconds = maxTimeSeconds and ctx.max(0, maxTimeSeconds - elapsedSeconds) or nil,
+        timeLeftSeconds = maxTimeSeconds and (maxTimeSeconds - elapsedSeconds) or nil,
         twoChestLimit = twoChestLimit,
         threeChestLimit = threeChestLimit,
         objectives = objectives,

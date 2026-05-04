@@ -3258,11 +3258,17 @@ local function RenderMythicUI()
             end
 
             if state.maxTimeSeconds then
-                ui.timerLine:SetText(string.format("%s (%s / %s)", KMNS.FormatSeconds(state.timeLeftSeconds), KMNS.FormatSeconds(state.elapsedSeconds), KMNS.FormatSeconds(state.maxTimeSeconds)))
+                if type(state.timeLeftSeconds) == "number" and state.timeLeftSeconds < 0 then
+                    ui.timerLine:SetText(string.format("+%s over (%s / %s)", KMNS.FormatSeconds(-state.timeLeftSeconds), KMNS.FormatSeconds(state.elapsedSeconds), KMNS.FormatSeconds(state.maxTimeSeconds)))
+                    ui.timerLine:SetTextColor(1, 0.25, 0.25, 1)
+                else
+                    ui.timerLine:SetText(string.format("%s (%s / %s)", KMNS.FormatSeconds(state.timeLeftSeconds), KMNS.FormatSeconds(state.elapsedSeconds), KMNS.FormatSeconds(state.maxTimeSeconds)))
+                    ui.timerLine:SetTextColor(1, 1, 1, 1)
+                end
             else
                 ui.timerLine:SetText(KMNS.FormatSeconds(state.elapsedSeconds))
+                ui.timerLine:SetTextColor(1, 1, 1, 1)
             end
-            ui.timerLine:SetTextColor(1, 1, 1, 1)
             ui.timerLine:SetWidth(width)
             ui.timerLine:ClearAllPoints()
             ui.timerLine:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", xPadding, y)

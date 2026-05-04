@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-05-04
+
+### Fixed
+- Fixed the active-run timer not showing how far over time the key went. The time-remaining value was previously clamped to zero when elapsed exceeded the limit; it now allows negative values so the overlay correctly displays `+MM:SS over` in red when the timer has expired.
+
+### Packaging
+- Bumped TOC version to `2.0.0`.
+
 ## [1.9.9] - 2026-05-04
 
 ### Packaging
