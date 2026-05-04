@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.8] - 2026-05-04
+
+### Fixed
+- Fixed premature overlay display on dungeon zone-in before a key started. The zone-in recovery poll now requires an active challenge-mode API signal inside a Mythic+ instance before showing the overlay.
+
+### Packaging
+- Bumped TOC version to `1.9.8`.
+
 ## [1.9.7] - 2026-05-04
 
 ### Fixed

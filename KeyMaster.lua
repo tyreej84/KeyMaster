@@ -5676,17 +5676,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
             attempts = attempts + 1
             -- Use Blizzard APIs directly to avoid side-effects on ui.inChallengeMode
             local inMythicInstance = IsInMythicDungeonInstance()
-            local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
-            local scenarioHasCriteria = false
-            if C_Scenario and C_Scenario.GetStepInfo then
-                local _, _, criteriaCount = C_Scenario.GetStepInfo()
-                scenarioHasCriteria = type(criteriaCount) == "number" and criteriaCount > 0
-            end
-            local challengeActive = (C_ChallengeMode
-                    and ((C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
-                        or (C_ChallengeMode.GetActiveChallengeMapID and type(C_ChallengeMode.GetActiveChallengeMapID()) == "number" and C_ChallengeMode.GetActiveChallengeMapID() > 0)))
-                or (inMythicInstance and scenarioHasCriteria)
-                or (inMythicInstance and type(elapsedSeconds) == "number" and elapsedSeconds >= 0)
+            local challengeApiActive = C_ChallengeMode
+                and ((C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
+                    or (C_ChallengeMode.GetActiveChallengeMapID and type(C_ChallengeMode.GetActiveChallengeMapID()) == "number" and C_ChallengeMode.GetActiveChallengeMapID() > 0))
+            local challengeActive = inMythicInstance and challengeApiActive
             if challengeActive then
                 ui.inChallengeMode = true
                 local settings = InitializeDatabase().ui
