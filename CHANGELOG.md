@@ -2,20 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.0.0] - 2026-05-04
+## [1.9.9] - 2026-05-04
 
 ### Fixed
-- Fixed the active-run timer not showing how far over time the key went. The time-remaining value was previously clamped to zero when elapsed exceeded the limit; it now allows negative values so the overlay correctly displays `+MM:SS over` in red when the timer has expired.
-
-### Packaging
-- Bumped TOC version to `2.0.0`.
-
-## [1.9.9] - 2026-05-04
+- Fixed `!keys`, `!score`, and `!best` chat commands not responding. The send path was gated on `issecurevariable(C_ChatInfo, "SendChatMessage")`; if another addon taints that API the check returns false and all replies were silently queued but never sent. The send path now calls the global `SendChatMessage` directly (safe from chat event handlers) with `C_ChatInfo.SendChatMessage` as fallback, and no longer performs a security-variable gate before sending.
+- Fixed the active-run timer not showing how far over the key timer ran. `timeLeftSeconds` was clamped to zero when elapsed exceeded the limit; the overlay now shows `+MM:SS over` in red when the timer has expired.
+- Fixed premature overlay display on dungeon zone-in before a key was started.
 
 ### Packaging
 - Bumped TOC version to `1.9.9`.
-- Refreshed local release payload and archive for `Releases/1.9.9`.
-- Synced active addon files to the live WoW AddOns directory.
 
 ## [1.9.8] - 2026-05-04
 

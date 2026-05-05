@@ -308,23 +308,18 @@ local function IsCombatLockdownActive()
     return InCombatLockdown and InCombatLockdown() == true
 end
 
-local function IsChatSendPathSecure()
-    if type(issecurevariable) ~= "function" then
-        return true
-    end
-
-    -- Only check the API we actually use to send; the old SendChatMessage global
-    -- may be absent or tainted without affecting C_ChatInfo.SendChatMessage.
-    return issecurevariable(C_ChatInfo, "SendChatMessage") == true
-end
-
 local function TrySendChatMessage(message, chatType)
-    if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.SendChatMessage) ~= "function" then
-        return false
+    -- Prefer the global SendChatMessage (callable from event handlers).
+    if type(SendChatMessage) == "function" then
+        local ok = pcall(SendChatMessage, message, chatType)
+        if ok then return true end
     end
-
-    local ok = pcall(C_ChatInfo.SendChatMessage, message, chatType)
-    return ok == true
+    -- Fallback to C_ChatInfo variant.
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.SendChatMessage) == "function" then
+        local ok = pcall(C_ChatInfo.SendChatMessage, message, chatType)
+        if ok then return true end
+    end
+    return false
 end
 
 local function QueueDeferredChatMessage(message, chatType)
@@ -349,7 +344,7 @@ local function QueueDeferredChatMessage(message, chatType)
 end
 
 local function SendOrQueueChatMessage(message, chatType)
-    if IsCombatLockdownActive() or not IsChatSendPathSecure() then
+    if IsCombatLockdownActive() then
         QueueDeferredChatMessage(message, chatType)
         return false
     end
@@ -363,7 +358,7 @@ local function SendOrQueueChatMessage(message, chatType)
 end
 
 local function FlushDeferredChatMessages()
-    if IsCombatLockdownActive() or not IsChatSendPathSecure() then
+    if IsCombatLockdownActive() then
         return
     end
 
