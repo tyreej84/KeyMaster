@@ -2,34 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.9.10] - 2026-05-04
+## [1.9.7] - 2026-05-05
 
 ### Fixed
-- Fixed overlay showing prematurely on dungeon zone-in before a key was started. The zone-in poll was falling back to `GetActiveChallengeMapID() > 0` which returns the dungeon map ID immediately on entry. The UI now only shows when the key actually starts (`IsChallengeModeActive()` returns true).
-
-## [1.9.9] - 2026-05-04
-
-### Fixed
-- Fixed `!keys`, `!score`, and `!best` chat commands not responding. The send path was gated on `issecurevariable(C_ChatInfo, "SendChatMessage")`; if another addon taints that API the check returns false and all replies were silently queued but never sent. The send path now calls the global `SendChatMessage` directly (safe from chat event handlers) with `C_ChatInfo.SendChatMessage` as fallback, and no longer performs a security-variable gate before sending.
-- Fixed the active-run timer not showing how far over the key timer ran. `timeLeftSeconds` was clamped to zero when elapsed exceeded the limit; the overlay now shows `+MM:SS over` in red when the timer has expired.
-- Fixed premature overlay display on dungeon zone-in before a key was started.
-
-### Packaging
-- Bumped TOC version to `1.9.9`.
-
-## [1.9.8] - 2026-05-04
-
-### Fixed
-- Fixed premature overlay display on dungeon zone-in before a key started. The zone-in recovery poll now requires an active challenge-mode API signal inside a Mythic+ instance before showing the overlay.
-
-### Packaging
-- Bumped TOC version to `1.9.8`.
-
-## [1.9.7] - 2026-05-04
-
-### Fixed
-- Fixed `!keys`, `!score`, and `!best` commands not responding. The chat-send security check was also validating the old deprecated `SendChatMessage` global which is no longer reliably available; the check now only validates `C_ChatInfo.SendChatMessage`, which is the actual API used to send replies.
-- Removed the combat-lockdown hard-drop in the chat handler. Commands typed during combat are now parsed and the reply is queued; it sends automatically when combat ends.
+- Fixed `!keys`, `!key`, `!score`, `!scores`, and `!best` chat commands silently failing to reply. `SendChatMessage` is now localized at load time and called directly without a `pcall` wrapper, so any blocked-call error surfaces in BugGrabber. The previous security-variable gate on `C_ChatInfo.SendChatMessage` has been removed; sends now go through the global `SendChatMessage` first with `C_ChatInfo.SendChatMessage` as fallback.
+- Removed the combat-lockdown hard-drop in the chat handler. Commands typed during combat are now parsed and the reply is queued; it sends automatically when combat ends via `PLAYER_REGEN_ENABLED`.
+- Fixed overlay showing prematurely on dungeon zone-in before a key was started. The zone-in recovery poll was falling back to `GetActiveChallengeMapID() > 0`, which returns the dungeon map ID immediately on entry regardless of run state. The overlay now only shows when `IsChallengeModeActive()` returns true.
+- Fixed the active-run timer not showing over-time progress. `timeLeftSeconds` was clamped to zero when elapsed exceeded the limit; the overlay now shows `+MM:SS over` in red once the timer expires.
+- M+ overlay no longer displays inside incursions or other non-Mythic+ party instances. The instance gate now strictly checks for Mythic+ difficulty IDs (8 and 23) only.
 
 ### Packaging
 - Bumped TOC version to `1.9.7`.
