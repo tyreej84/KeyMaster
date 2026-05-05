@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.10] - 2026-05-04
+
+### Fixed
+- Fixed overlay showing prematurely on dungeon zone-in before a key was started. The zone-in poll was falling back to `GetActiveChallengeMapID() > 0` which returns the dungeon map ID immediately on entry. The UI now only shows when the key actually starts (`IsChallengeModeActive()` returns true).
+
 ## [1.9.9] - 2026-05-04
 
 ### Fixed
