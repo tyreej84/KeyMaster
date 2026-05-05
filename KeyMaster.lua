@@ -5678,8 +5678,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
             -- Use Blizzard APIs directly to avoid side-effects on ui.inChallengeMode
             local inMythicInstance = IsInMythicDungeonInstance()
             local challengeApiActive = C_ChallengeMode
-                and ((C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
-                    or (C_ChallengeMode.GetActiveChallengeMapID and type(C_ChallengeMode.GetActiveChallengeMapID()) == "number" and C_ChallengeMode.GetActiveChallengeMapID() > 0))
+                and (C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive())
             local challengeActive = inMythicInstance and challengeApiActive
             if challengeActive then
                 ui.inChallengeMode = true
