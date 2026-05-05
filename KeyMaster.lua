@@ -1,6 +1,6 @@
 local addonName = ...
 local KMNS = _G.KeyMasterNS or {}
-
+local SendChatMessage = SendChatMessage
 
 local strtrim = strtrim or function(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
 local IsChallengeModeRunActive
@@ -309,15 +309,16 @@ local function IsCombatLockdownActive()
 end
 
 local function TrySendChatMessage(message, chatType)
-    -- Prefer the global SendChatMessage (callable from event handlers).
+    -- Call the localized SendChatMessage directly (no pcall) so errors surface
+    -- in BugGrabber. Localized at load time to capture the secure reference.
     if type(SendChatMessage) == "function" then
-        local ok = pcall(SendChatMessage, message, chatType)
-        if ok then return true end
+        SendChatMessage(message, chatType)
+        return true
     end
     -- Fallback to C_ChatInfo variant.
     if type(C_ChatInfo) == "table" and type(C_ChatInfo.SendChatMessage) == "function" then
-        local ok = pcall(C_ChatInfo.SendChatMessage, message, chatType)
-        if ok then return true end
+        C_ChatInfo.SendChatMessage(message, chatType)
+        return true
     end
     return false
 end
