@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.8] - 2026-05-11
+
+### Fixed
+- Fixed M+ overlay appearing on zone-in to a mythic dungeon when no challenge mode is active. `IsChallengeModeRunActive` was returning `true` due to two spurious fallbacks: scenario criteria count (non-zero in any dungeon with objectives) and world elapsed timer (non-negative immediately on instance load). These fallbacks have been removed. The function now relies solely on `ui.inChallengeMode` (set by `CHALLENGE_MODE_START`), `IsChallengeModeActive()`, and `GetActiveChallengeMapID() > 0`.
+- Hardened event registration to avoid protected-call faults during startup. `SafeRegisterFrameEvent` no longer routes through `securecallfunction`, which was triggering `ADDON_ACTION_FORBIDDEN` and could prevent `CHAT_MSG_*` events from registering.
+- Removed `CanReadChatPayload` guard from the chat command handler. The guard used `canaccessvalue` on the message text which could return `false` in tainted contexts, silently dropping `!keys`/`!score`/`!best` commands before they were parsed.
+
+### Packaging
+- Bumped TOC version to `1.9.8`.
+
 ## [1.9.7] - 2026-05-05
 
 ### Fixed

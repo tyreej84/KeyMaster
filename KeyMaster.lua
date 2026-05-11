@@ -2610,20 +2610,6 @@ IsChallengeModeRunActive = function()
         end
     end
 
-    if C_Scenario and C_Scenario.GetStepInfo then
-        local _, _, criteriaCount = C_Scenario.GetStepInfo()
-        if type(criteriaCount) == "number" and criteriaCount > 0 then
-            return true
-        end
-    end
-
-    -- Fallback: during some zoning transitions challenge APIs can lag, while
-    -- the scenario/world timer is already available for an active run.
-    local elapsedSeconds = GetWorldElapsedSeconds and GetWorldElapsedSeconds()
-    if type(elapsedSeconds) == "number" and elapsedSeconds >= 0 then
-        return true
-    end
-
     return false
 end
 
