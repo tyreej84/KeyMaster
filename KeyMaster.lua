@@ -67,14 +67,11 @@ local function SafeRegisterFrameEvent(eventName)
         return true
     end
 
-    if type(securecallfunction) == "function" then
-        local ok = pcall(securecallfunction, frame.RegisterEvent, frame, eventName)
-        if ok and frame:IsEventRegistered(eventName) then
-            return true
-        end
-    end
-
-    local ok = pcall(frame.RegisterEvent, frame, eventName)
+    -- Keep registration path simple and unwrapped; securecall wrappers around
+    -- RegisterEvent have shown protected-call faults in tainted sessions.
+    local ok = pcall(function()
+        frame:RegisterEvent(eventName)
+    end)
     return ok and frame:IsEventRegistered(eventName)
 end
 
