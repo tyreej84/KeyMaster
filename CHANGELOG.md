@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.9] - 2026-05-13
+
+### Fixed
+- Fixed `!keys`, `!score`, and `!best` chat commands never receiving chat messages. `RegisterRuntimeEventsOnce` (which registers all `CHAT_MSG_*` events) was only called from the `ADDON_LOADED` and `PLAYER_LOGIN` event handlers. Because bootstrap event registration was deferred through `C_Timer.After`, those events had already been dispatched by the WoW loader before the frame ever registered to receive them, so the handlers never fired and `CHAT_MSG_*` events were never registered. The fix registers both bootstrap and runtime events directly after `frame:SetScript("OnEvent")`, matching the pattern used by other addons with working chat commands.
+
+### Packaging
+- Bumped TOC version to `1.9.9`.
+
 ## [1.9.8] - 2026-05-11
 
 ### Fixed

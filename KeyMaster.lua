@@ -5750,3 +5750,12 @@ frame:SetScript("OnEvent", function(_, event, ...)
     HandleChatMessage(event, ...)
 end)
 
+-- Register bootstrap and runtime events directly after the event handler is
+-- set. ScheduleBootstrapRegistration uses C_Timer.After which fires AFTER
+-- ADDON_LOADED and PLAYER_LOGIN have already been dispatched by the WoW
+-- loader, so those events would be missed and RegisterRuntimeEventsOnce would
+-- never run. Direct registration here mirrors how other addons register chat
+-- events and ensures CHAT_MSG_* events are always live from the start.
+RegisterBootstrapEvents()
+RegisterRuntimeEventsOnce()
+
