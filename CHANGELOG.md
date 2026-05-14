@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-05-14
+
+### Fixed
+- Fixed `Frame:RegisterEvent()` forbidden errors during addon load. Runtime events are no longer force-registered in the main chunk. Bootstrap events are registered immediately after `frame:SetScript("OnEvent")`, and runtime events are registered from `ADDON_LOADED` / `PLAYER_LOGIN` handlers.
+- Fixed `attempt to call a nil value` at `RequestGuildKeysFromAllSources(true, true)` in the external sync retry path. Added a forward declaration and bound the function before first use so retry callbacks always resolve the local function.
+
+### Packaging
+- Bumped TOC version to `2.0.0`.
+
 ## [1.9.9] - 2026-05-13
 
 ### Fixed
