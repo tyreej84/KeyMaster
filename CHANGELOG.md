@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-06-17
+
+### Changed
+- Updated addon metadata for Retail patch 12.0.7 by setting TOC interface to `120007`.
+
+### Packaging
+- Bumped TOC version to `2.0.1`.
+
 ## [2.0.0] - 2026-05-14
 
 ### Fixed
